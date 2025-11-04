@@ -1,5 +1,7 @@
 {
   "name": "AquaTrack - Water Management System",
   "description": "A comprehensive water management system for districts, managers, and ditch riders. Features role-based dashboards, QR code integration for water orders, real-time alerts, and reporting capabilities.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }
