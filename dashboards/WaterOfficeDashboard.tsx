@@ -1,26 +1,37 @@
 
 import React from 'react';
 import { User, WaterOrder, WaterOrderStatus } from '../types';
-import { WATER_ORDERS } from '../constants';
 import WaterOrderList from '../components/WaterOrderList';
 import DashboardCard from '../components/DashboardCard';
 import { ClockIcon, CheckCircleIcon, RefreshIcon } from '../components/icons';
 
 interface WaterOfficeDashboardProps {
   user: User;
+  waterOrders: WaterOrder[];
+  setWaterOrders: React.Dispatch<React.SetStateAction<WaterOrder[]>>;
 }
 
-const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ user }) => {
-  const pendingOrders = WATER_ORDERS.filter(o => o.status === WaterOrderStatus.Pending);
-  const approvedOrders = WATER_ORDERS.filter(o => o.status === WaterOrderStatus.Approved);
-  const inProgressOrders = WATER_ORDERS.filter(o => o.status === WaterOrderStatus.InProgress);
+const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ user, waterOrders, setWaterOrders }) => {
+  const pendingOrders = waterOrders.filter(o => o.status === WaterOrderStatus.Pending);
+  const approvedOrders = waterOrders.filter(o => o.status === WaterOrderStatus.Approved);
+  const inProgressOrders = waterOrders.filter(o => o.status === WaterOrderStatus.InProgress);
+  
+  const handleApprove = (orderId: string) => {
+    setWaterOrders(prev => prev.map(o => o.id === orderId ? {...o, status: WaterOrderStatus.InProgress} : o));
+    alert(`Order ${orderId} approved and is now in progress.`);
+  }
+
+  const handleReject = (orderId: string) => {
+    setWaterOrders(prev => prev.map(o => o.id === orderId ? {...o, status: WaterOrderStatus.Cancelled} : o));
+     alert(`Order ${orderId} has been rejected.`);
+  }
 
   const orderActions = (order: WaterOrder) => {
     if (order.status === WaterOrderStatus.Pending) {
         return (
             <div className="flex space-x-2">
-                <button className="px-3 py-1 text-sm bg-green-500 text-white rounded-md hover:bg-green-600">Approve</button>
-                <button className="px-3 py-1 text-sm bg-red-500 text-white rounded-md hover:bg-red-600">Reject</button>
+                <button onClick={() => handleApprove(order.id)} className="px-3 py-1 text-sm bg-green-500 text-white rounded-md hover:bg-green-600">Approve</button>
+                <button onClick={() => handleReject(order.id)} className="px-3 py-1 text-sm bg-red-500 text-white rounded-md hover:bg-red-600">Reject</button>
             </div>
         )
     }

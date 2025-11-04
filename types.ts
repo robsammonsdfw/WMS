@@ -18,6 +18,7 @@ export enum WaterOrderStatus {
   InProgress = 'In Progress',
   Completed = 'Completed',
   Cancelled = 'Cancelled',
+  AwaitingApproval = 'Awaiting Approval',
 }
 
 export interface Field {
@@ -28,6 +29,9 @@ export interface Field {
   location: string;
   totalWaterAllocation: number;
   waterUsed: number;
+  owner?: string;
+  lateral: string;
+  tapNumber: string;
 }
 
 export interface WaterOrder {
@@ -40,4 +44,7 @@ export interface WaterOrder {
   requestedAmount: number; // in acre-feet
   ditchRiderId?: number;
   lateral: string;
+  serialNumber?: string;
+  deliveryStartDate?: string;
+  tapNumber?: string;
 }

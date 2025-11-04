@@ -11,6 +11,8 @@ interface WaterOrderListProps {
 
 const getStatusPill = (status: WaterOrderStatus) => {
   switch (status) {
+    case WaterOrderStatus.AwaitingApproval:
+      return <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800 flex items-center"><ClockIcon className="h-4 w-4 mr-1" />Awaiting Approval</span>;
     case WaterOrderStatus.Pending:
       return <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 flex items-center"><ClockIcon className="h-4 w-4 mr-1" />Pending</span>;
     case WaterOrderStatus.Approved:
@@ -41,16 +43,22 @@ const WaterOrderList: React.FC<WaterOrderListProps> = ({ orders, title, actions 
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {orders.map(order => (
-              <tr key={order.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{order.id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.fieldName}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.orderDate}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.requestedAmount}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getStatusPill(order.status)}</td>
-                {actions && <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{actions(order)}</td>}
-              </tr>
-            ))}
+            {orders.length === 0 ? (
+                <tr>
+                    <td colSpan={actions ? 6: 5} className="text-center py-4 text-sm text-gray-500">No orders to display.</td>
+                </tr>
+            ) : (
+                orders.map(order => (
+                <tr key={order.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{order.id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.fieldName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.orderDate}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.requestedAmount}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getStatusPill(order.status)}</td>
+                    {actions && <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{actions(order)}</td>}
+                </tr>
+                ))
+            )}
           </tbody>
         </table>
       </div>

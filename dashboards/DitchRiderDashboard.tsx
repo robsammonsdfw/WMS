@@ -1,18 +1,20 @@
+
 import React, { useMemo, useState } from 'react';
 import { User, WaterOrder, WaterOrderStatus } from '../types';
-import { WATER_ORDERS } from '../constants';
+import { FIELDS } from '../constants';
 import { QrCodeIcon } from '../components/icons';
 import Scanner from '../components/Scanner';
 
 interface DitchRiderDashboardProps {
   user: User;
+  waterOrders: WaterOrder[];
+  setWaterOrders: React.Dispatch<React.SetStateAction<WaterOrder[]>>;
 }
 
-const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user }) => {
-  const [allOrders, setAllOrders] = useState<WaterOrder[]>(WATER_ORDERS);
+const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOrders, setWaterOrders }) => {
   const [isScanning, setIsScanning] = useState(false);
   
-  const myOrders = allOrders.filter(o => o.ditchRiderId === user.id && (o.status === WaterOrderStatus.Approved || o.status === WaterOrderStatus.InProgress));
+  const myOrders = waterOrders.filter(o => o.ditchRiderId === user.id && (o.status === WaterOrderStatus.Approved || o.status === WaterOrderStatus.InProgress));
 
   const ordersByLateral = useMemo(() => {
     return myOrders.reduce((acc, order) => {
@@ -30,36 +32,47 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user }) => {
     try {
       const { action, fieldId, fieldName } = JSON.parse(data);
       
-      let targetStatus: WaterOrderStatus;
-      let newStatus: WaterOrderStatus;
-      let successMessage: string;
-      
       if (action === 'start-delivery') {
-        targetStatus = WaterOrderStatus.Approved;
-        newStatus = WaterOrderStatus.InProgress;
-        successMessage = `Started water delivery for ${fieldName}.`;
+        const field = FIELDS.find(f => f.id === fieldId);
+        if (!field) {
+            alert(`Field with ID ${fieldId} not found.`);
+            return;
+        }
+
+        const newOrder: WaterOrder = {
+          id: `WO-${String(waterOrders.length + 1).padStart(3, '0')}`,
+          fieldId,
+          fieldName,
+          requester: user.name, // Ditch rider is the initial requester
+          status: WaterOrderStatus.AwaitingApproval,
+          orderDate: new Date().toLocaleDateString('en-CA'),
+          deliveryStartDate: new Date().toISOString(),
+          requestedAmount: 0, // Manager needs to confirm/enter this
+          ditchRiderId: user.id,
+          lateral: field.lateral,
+          tapNumber: field.tapNumber,
+        };
+
+        setWaterOrders(prevOrders => [newOrder, ...prevOrders]);
+        alert(`Started water delivery for ${fieldName}. A request has been sent to the water manager for approval.`);
+
       } else if (action === 'end-delivery') {
-        targetStatus = WaterOrderStatus.InProgress;
-        newStatus = WaterOrderStatus.Completed;
-        successMessage = `Ended water delivery for ${fieldName}.`;
+        const orderIndex = waterOrders.findIndex(o => 
+          o.fieldId === fieldId && 
+          o.status === WaterOrderStatus.InProgress &&
+          o.ditchRiderId === user.id
+        );
+
+        if (orderIndex !== -1) {
+          const updatedOrders = [...waterOrders];
+          updatedOrders[orderIndex] = { ...updatedOrders[orderIndex], status: WaterOrderStatus.Completed };
+          setWaterOrders(updatedOrders);
+          alert(`Ended water delivery for ${fieldName}.`);
+        } else {
+          alert(`No "In Progress" order for "${fieldName}" was found for you.`);
+        }
       } else {
         alert('Invalid QR code action.');
-        return;
-      }
-
-      const orderIndex = allOrders.findIndex(o => 
-        o.fieldId === fieldId && 
-        o.status === targetStatus &&
-        o.ditchRiderId === user.id
-      );
-
-      if (orderIndex !== -1) {
-        const updatedOrders = [...allOrders];
-        updatedOrders[orderIndex] = { ...updatedOrders[orderIndex], status: newStatus };
-        setAllOrders(updatedOrders);
-        alert(successMessage);
-      } else {
-        alert(`No order for "${fieldName}" with status "${targetStatus}" was found for you.`);
       }
 
     } catch (e) {
@@ -78,19 +91,14 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user }) => {
             {order.status === WaterOrderStatus.InProgress && 
                 <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 animate-pulse">In Progress</span>
             }
+            {order.status === WaterOrderStatus.Approved && 
+                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Ready to Start</span>
+            }
         </div>
         <p className="text-gray-700">Requested Amount: <span className="font-semibold">{order.requestedAmount} AF</span></p>
         
-        {order.status === WaterOrderStatus.Approved && (
-            <button className="w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                Start Delivery
-            </button>
-        )}
-        {order.status === WaterOrderStatus.InProgress && (
-             <button className="w-full px-4 py-2 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
-                End Delivery
-            </button>
-        )}
+        <p className="text-sm text-gray-600">Use QR code at headgate to start or stop delivery.</p>
+
     </div>
   );
 
