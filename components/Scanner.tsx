@@ -1,6 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { XCircleIcon } from './icons';
 
+// Add jsQR to the window type for TypeScript
+declare global {
+    interface Window {
+        jsQR: (data: Uint8ClampedArray, width: number, height: number) => { data: string } | null;
+    }
+}
+
 interface ScannerProps {
   onScan: (data: string) => void;
   onClose: () => void;
@@ -8,20 +15,19 @@ interface ScannerProps {
 
 const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
     let animationFrameId: number | null = null;
-    let barcodeDetector: any | null = null;
 
     const startScan = async () => {
-      if (!('BarcodeDetector' in window)) {
-        setError('QR code scanning is not supported by this browser.');
+      // Check if the jsQR library has loaded
+      if (!window.jsQR) {
+        setError('QR code scanning library could not be loaded. Please check your internet connection and try again.');
         return;
       }
-      
-      barcodeDetector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
 
       try {
         stream = await navigator.mediaDevices.getUserMedia({ 
@@ -47,16 +53,23 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         return;
       }
 
-      const detect = async () => {
-        if (videoRef.current && barcodeDetector && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-          try {
-            const barcodes = await barcodeDetector.detect(videoRef.current);
-            if (barcodes.length > 0) {
-              onScan(barcodes[0].rawValue);
+      const detect = () => {
+        if (videoRef.current && canvasRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+          const video = videoRef.current;
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext('2d');
+
+          if (ctx) {
+            canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = window.jsQR(imageData.data, imageData.width, imageData.height);
+
+            if (code) {
+              onScan(code.data);
               return; // Stop scanning once a code is found
             }
-          } catch (e) {
-            console.error('Barcode detection failed:', e);
           }
         }
         animationFrameId = requestAnimationFrame(detect);
@@ -96,6 +109,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         
         <div className="w-full aspect-square bg-gray-900 rounded-md overflow-hidden relative flex items-center justify-center">
             <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
             <div className="absolute inset-0 border-4 border-dashed border-white/50 rounded-md"></div>
              {error && (
                 <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4">
