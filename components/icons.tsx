@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 export const WaterDropIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -8,11 +7,11 @@ export const WaterDropIcon: React.FC<{ className?: string }> = ({ className }) =
 );
 
 export const QrCodeIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h4v4H4zM4 16h4v4H4zM16 4h4v4h-4zM16 16h4v4h-4zM10 4h4v4h-4zM4 10h4v4H4zM10 10h4v4h-4zM10 16h4v4h-4zM16 10h4v4h-4z" />
+    </svg>
 );
+
 
 export const UserGroupIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -1,16 +1,18 @@
-import React from 'react';
-import { User } from '../types';
+import React, { useState } from 'react';
+import { User, Field } from '../types';
 import { FIELDS, WATER_ORDERS } from '../constants';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
-// Fix: Import ChartBarIcon from the shared components file.
-import { WaterDropIcon, DocumentReportIcon, ChartBarIcon } from '../components/icons';
+import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon } from '../components/icons';
+import QRCodeModal from '../components/QRCodeModal';
 
 interface WaterManagerDashboardProps {
   user: User;
 }
 
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user }) => {
+  const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
+
   const totalWaterUsed = FIELDS.reduce((sum, field) => sum + field.waterUsed, 0);
   const totalAllocation = FIELDS.reduce((sum, field) => sum + field.totalWaterAllocation, 0);
   const allocationUsedPercent = ((totalWaterUsed / totalAllocation) * 100).toFixed(1);
@@ -56,6 +58,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user }) =
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acres</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Water Used / Allocation (AF)</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usage</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -72,6 +75,16 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user }) =
                                     <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${usagePercent}%` }}></div>
                                 </div>
                             </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                                <button
+                                    onClick={() => setSelectedFieldForQR(field)}
+                                    className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                    title="Generate QR Codes"
+                                >
+                                    <QrCodeIcon className="h-5 w-5" />
+                                    <span className="sr-only">Generate QR Codes for {field.name}</span>
+                                </button>
+                            </td>
                         </tr>
                         )
                     })}
@@ -81,10 +94,15 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user }) =
       </div>
 
       <WaterOrderList orders={WATER_ORDERS} title="My Recent Water Orders" />
+
+      {selectedFieldForQR && (
+        <QRCodeModal
+          field={selectedFieldForQR}
+          onClose={() => setSelectedFieldForQR(null)}
+        />
+      )}
     </div>
   );
 };
-
-// Fix: Remove redundant local definition of ChartBarIcon as it is now imported.
 
 export default WaterManagerDashboard;
