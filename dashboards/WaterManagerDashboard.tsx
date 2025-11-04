@@ -1,12 +1,12 @@
-
 import React, { useState } from 'react';
 import { User, Field, WaterOrder, WaterOrderStatus } from '../types';
 import { FIELDS } from '../constants';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
-import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, CameraIcon } from '../components/icons';
+import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, CameraIcon, DocumentAddIcon } from '../components/icons';
 import QRCodeModal from '../components/QRCodeModal';
 import WaterRequestUploader from '../components/WaterRequestUploader';
+import NewWaterOrderModal from '../components/NewWaterOrderModal';
 
 interface WaterManagerDashboardProps {
   user: User;
@@ -17,6 +17,7 @@ interface WaterManagerDashboardProps {
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, setWaterOrders }) => {
   const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
   const [isUploaderOpen, setIsUploaderOpen] = useState(false);
+  const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
 
   const totalWaterUsed = FIELDS.reduce((sum, field) => sum + field.waterUsed, 0);
   const totalAllocation = FIELDS.reduce((sum, field) => sum + field.totalWaterAllocation, 0);
@@ -25,7 +26,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
   const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
 
-  const handleOrderCreated = (extractedData: any) => {
+  const handleImageOrderCreated = (extractedData: any) => {
     const field = FIELDS.find(f => f.owner?.toLowerCase() === extractedData.owner?.toLowerCase());
 
     if (!field) {
@@ -53,6 +54,31 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     alert(`New water order created for ${field.name} and sent for approval.`);
   };
   
+  const handleManualOrderCreate = (formData: { fieldId: string; requestedAmount: number; deliveryStartDate: string; }) => {
+    const field = FIELDS.find(f => f.id === formData.fieldId);
+    if (!field) {
+        alert('Selected field not found.');
+        return;
+    }
+
+    const newOrder: WaterOrder = {
+        id: `WO-${String(waterOrders.length + 1).padStart(3, '0')}`,
+        fieldId: field.id,
+        fieldName: field.name,
+        requester: user.name,
+        status: WaterOrderStatus.Pending,
+        orderDate: new Date().toLocaleDateString('en-CA'),
+        deliveryStartDate: formData.deliveryStartDate,
+        requestedAmount: formData.requestedAmount,
+        lateral: field.lateral,
+        tapNumber: field.tapNumber,
+    };
+
+    setWaterOrders([newOrder, ...waterOrders]);
+    setIsNewOrderModalOpen(false);
+    alert(`New water order for ${field.name} has been created and sent for approval.`);
+  };
+
   const handleSubmitToOffice = (orderId: string) => {
     setWaterOrders(prevOrders => prevOrders.map(order => 
       order.id === orderId 
@@ -109,11 +135,18 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             <h3 className="text-lg font-semibold text-gray-800">My Fields</h3>
             <div className="flex items-center gap-2">
                  <button 
+                    onClick={() => setIsNewOrderModalOpen(true)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                    <DocumentAddIcon className="-ml-1 mr-2 h-5 w-5" />
+                    Create Water Order
+                </button>
+                 <button 
                     onClick={() => setIsUploaderOpen(true)}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                 >
                     <CameraIcon className="-ml-1 mr-2 h-5 w-5" />
-                    Upload Water Request
+                    Upload Card
                 </button>
             </div>
         </div>
@@ -172,7 +205,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       {isUploaderOpen && (
           <WaterRequestUploader
             onClose={() => setIsUploaderOpen(false)}
-            onOrderCreated={handleOrderCreated}
+            onOrderCreated={handleImageOrderCreated}
+          />
+      )}
+      {isNewOrderModalOpen && (
+          <NewWaterOrderModal
+            onClose={() => setIsNewOrderModalOpen(false)}
+            onOrderCreate={handleManualOrderCreate}
           />
       )}
     </div>
