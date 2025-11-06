@@ -1,13 +1,16 @@
+
 import React, { useState, useCallback } from 'react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { XCircleIcon, CameraIcon } from './icons';
+import { Field } from '../types';
 
 interface WaterRequestUploaderProps {
   onClose: () => void;
   onOrderCreated: (data: any) => void;
+  fields: Field[];
 }
 
-const WaterRequestUploader: React.FC<WaterRequestUploaderProps> = ({ onClose, onOrderCreated }) => {
+const WaterRequestUploader: React.FC<WaterRequestUploaderProps> = ({ onClose, onOrderCreated, fields }) => {
   const [image, setImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

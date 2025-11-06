@@ -1,17 +1,18 @@
 
 import React, { useMemo, useState } from 'react';
-import { User, WaterOrder, WaterOrderStatus } from '../types';
-import { FIELDS } from '../constants';
+import { User, WaterOrder, WaterOrderStatus, Field } from '../types';
 import { QrCodeIcon } from '../components/icons';
 import Scanner from '../components/Scanner';
+import { createWaterOrder, updateWaterOrder } from '../services/api';
 
 interface DitchRiderDashboardProps {
   user: User;
   waterOrders: WaterOrder[];
-  setWaterOrders: React.Dispatch<React.SetStateAction<WaterOrder[]>>;
+  fields: Field[];
+  refreshWaterOrders: () => Promise<void>;
 }
 
-const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOrders, setWaterOrders }) => {
+const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders }) => {
   const [isScanning, setIsScanning] = useState(false);
   
   const myOrders = waterOrders.filter(o => o.ditchRiderId === user.id && (o.status === WaterOrderStatus.Approved || o.status === WaterOrderStatus.InProgress));
@@ -27,25 +28,23 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
     }, {} as Record<string, WaterOrder[]>);
   }, [myOrders]);
   
-  const handleScan = (data: string) => {
+  const handleScan = async (data: string) => {
     setIsScanning(false);
     try {
       const { action, fieldId, fieldName } = JSON.parse(data);
       
       if (action === 'start-delivery') {
-        const field = FIELDS.find(f => f.id === fieldId);
+        const field = fields.find(f => f.id === fieldId);
         if (!field) {
             alert(`Field with ID ${fieldId} not found.`);
             return;
         }
 
-        const newOrder: WaterOrder = {
-          id: `WO-${String(waterOrders.length + 1).padStart(3, '0')}`,
+        const newOrderData = {
           fieldId,
           fieldName,
           requester: user.name, // Ditch rider is the initial requester
           status: WaterOrderStatus.AwaitingApproval,
-          orderDate: new Date().toLocaleDateString('en-CA'),
           deliveryStartDate: new Date().toISOString(),
           requestedAmount: 0, // Manager needs to confirm/enter this
           ditchRiderId: user.id,
@@ -53,21 +52,29 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
           tapNumber: field.tapNumber,
         };
 
-        setWaterOrders(prevOrders => [newOrder, ...prevOrders]);
-        alert(`Started water delivery for ${fieldName}. A request has been sent to the water manager for approval.`);
+        try {
+            await createWaterOrder(newOrderData);
+            await refreshWaterOrders();
+            alert(`Started water delivery for ${fieldName}. A request has been sent to the water manager for approval.`);
+        } catch(error) {
+            alert(`Failed to create order: ${error}`);
+        }
 
       } else if (action === 'end-delivery') {
-        const orderIndex = waterOrders.findIndex(o => 
+        const orderToEnd = waterOrders.find(o => 
           o.fieldId === fieldId && 
           o.status === WaterOrderStatus.InProgress &&
           o.ditchRiderId === user.id
         );
 
-        if (orderIndex !== -1) {
-          const updatedOrders = [...waterOrders];
-          updatedOrders[orderIndex] = { ...updatedOrders[orderIndex], status: WaterOrderStatus.Completed };
-          setWaterOrders(updatedOrders);
-          alert(`Ended water delivery for ${fieldName}.`);
+        if (orderToEnd) {
+            try {
+                await updateWaterOrder(orderToEnd.id, { ...orderToEnd, status: WaterOrderStatus.Completed });
+                await refreshWaterOrders();
+                alert(`Ended water delivery for ${fieldName}.`);
+            } catch (error) {
+                alert(`Failed to end delivery: ${error}`);
+            }
         } else {
           alert(`No "In Progress" order for "${fieldName}" was found for you.`);
         }

@@ -4,34 +4,40 @@ import { User, WaterOrder, WaterOrderStatus } from '../types';
 import WaterOrderList from '../components/WaterOrderList';
 import DashboardCard from '../components/DashboardCard';
 import { ClockIcon, CheckCircleIcon, RefreshIcon } from '../components/icons';
+import { updateWaterOrder } from '../services/api';
 
 interface WaterOfficeDashboardProps {
   user: User;
   waterOrders: WaterOrder[];
-  setWaterOrders: React.Dispatch<React.SetStateAction<WaterOrder[]>>;
+  refreshWaterOrders: () => Promise<void>;
 }
 
-const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ user, waterOrders, setWaterOrders }) => {
+const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ user, waterOrders, refreshWaterOrders }) => {
   const pendingOrders = waterOrders.filter(o => o.status === WaterOrderStatus.Pending);
   const approvedOrders = waterOrders.filter(o => o.status === WaterOrderStatus.Approved);
   const inProgressOrders = waterOrders.filter(o => o.status === WaterOrderStatus.InProgress);
   
-  const handleApprove = (orderId: string) => {
-    setWaterOrders(prev => prev.map(o => o.id === orderId ? {...o, status: WaterOrderStatus.InProgress} : o));
-    alert(`Order ${orderId} approved and is now in progress.`);
-  }
+  const handleUpdateStatus = async (orderId: string, status: WaterOrderStatus) => {
+    const order = waterOrders.find(o => o.id === orderId);
+    if (!order) return;
 
-  const handleReject = (orderId: string) => {
-    setWaterOrders(prev => prev.map(o => o.id === orderId ? {...o, status: WaterOrderStatus.Cancelled} : o));
-     alert(`Order ${orderId} has been rejected.`);
-  }
+    try {
+        await updateWaterOrder(orderId, { ...order, status });
+        await refreshWaterOrders();
+        const action = status === WaterOrderStatus.InProgress ? 'approved and is now in progress' : 'rejected';
+        alert(`Order ${orderId} has been ${action}.`);
+    } catch (error) {
+        alert(`Failed to update order ${orderId}: ${error}`);
+    }
+  };
+
 
   const orderActions = (order: WaterOrder) => {
     if (order.status === WaterOrderStatus.Pending) {
         return (
             <div className="flex space-x-2">
-                <button onClick={() => handleApprove(order.id)} className="px-3 py-1 text-sm bg-green-500 text-white rounded-md hover:bg-green-600">Approve</button>
-                <button onClick={() => handleReject(order.id)} className="px-3 py-1 text-sm bg-red-500 text-white rounded-md hover:bg-red-600">Reject</button>
+                <button onClick={() => handleUpdateStatus(order.id, WaterOrderStatus.InProgress)} className="px-3 py-1 text-sm bg-green-500 text-white rounded-md hover:bg-green-600">Approve</button>
+                <button onClick={() => handleUpdateStatus(order.id, WaterOrderStatus.Cancelled)} className="px-3 py-1 text-sm bg-red-500 text-white rounded-md hover:bg-red-600">Reject</button>
             </div>
         )
     }

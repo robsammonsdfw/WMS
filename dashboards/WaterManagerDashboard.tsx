@@ -1,33 +1,35 @@
+
 import React, { useState } from 'react';
 import { User, Field, WaterOrder, WaterOrderStatus } from '../types';
-import { FIELDS } from '../constants';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
 import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, CameraIcon, DocumentAddIcon } from '../components/icons';
 import QRCodeModal from '../components/QRCodeModal';
 import WaterRequestUploader from '../components/WaterRequestUploader';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
+import { createWaterOrder, updateWaterOrder } from '../services/api';
 
 interface WaterManagerDashboardProps {
   user: User;
   waterOrders: WaterOrder[];
-  setWaterOrders: React.Dispatch<React.SetStateAction<WaterOrder[]>>;
+  fields: Field[];
+  refreshWaterOrders: () => Promise<void>;
 }
 
-const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, setWaterOrders }) => {
+const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders }) => {
   const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
   const [isUploaderOpen, setIsUploaderOpen] = useState(false);
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
 
-  const totalWaterUsed = FIELDS.reduce((sum, field) => sum + field.waterUsed, 0);
-  const totalAllocation = FIELDS.reduce((sum, field) => sum + field.totalWaterAllocation, 0);
-  const allocationUsedPercent = ((totalWaterUsed / totalAllocation) * 100).toFixed(1);
+  const totalWaterUsed = fields.reduce((sum, field) => sum + field.waterUsed, 0);
+  const totalAllocation = fields.reduce((sum, field) => sum + field.totalWaterAllocation, 0);
+  const allocationUsedPercent = totalAllocation > 0 ? ((totalWaterUsed / totalAllocation) * 100).toFixed(1) : 0;
 
   const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
   const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
 
-  const handleImageOrderCreated = (extractedData: any) => {
-    const field = FIELDS.find(f => f.owner?.toLowerCase() === extractedData.owner?.toLowerCase());
+  const handleImageOrderCreated = async (extractedData: any) => {
+    const field = fields.find(f => f.owner?.toLowerCase() === extractedData.owner?.toLowerCase());
 
     if (!field) {
         alert(`Could not find a field for owner "${extractedData.owner}". A new water order could not be created.`);
@@ -35,62 +37,75 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         return;
     }
 
-    const newOrder: WaterOrder = {
-        id: `WO-${String(waterOrders.length + 1).padStart(3, '0')}`,
+    const newOrderData = {
         serialNumber: extractedData.serialNumber,
         fieldId: field.id,
         fieldName: field.name,
         requester: user.name,
         status: WaterOrderStatus.Pending,
-        orderDate: new Date().toLocaleDateString('en-CA'), // Use current date for the order
         deliveryStartDate: extractedData.deliveryStartDate,
         requestedAmount: extractedData.deliveryAmount,
         lateral: extractedData.lateral,
         tapNumber: extractedData.tapNumber,
     };
 
-    setWaterOrders([newOrder, ...waterOrders]);
-    setIsUploaderOpen(false);
-    alert(`New water order created for ${field.name} and sent for approval.`);
+    try {
+      await createWaterOrder(newOrderData);
+      await refreshWaterOrders();
+      setIsUploaderOpen(false);
+      alert(`New water order created for ${field.name} and sent for approval.`);
+    } catch (error) {
+        alert(`Error creating water order: ${error}`);
+    }
   };
   
-  const handleManualOrderCreate = (formData: { fieldId: string; requestedAmount: number; deliveryStartDate: string; }) => {
-    const field = FIELDS.find(f => f.id === formData.fieldId);
+  const handleManualOrderCreate = async (formData: { fieldId: string; requestedAmount: number; deliveryStartDate: string; }) => {
+    const field = fields.find(f => f.id === formData.fieldId);
     if (!field) {
         alert('Selected field not found.');
         return;
     }
 
-    const newOrder: WaterOrder = {
-        id: `WO-${String(waterOrders.length + 1).padStart(3, '0')}`,
+    const newOrderData = {
         fieldId: field.id,
         fieldName: field.name,
         requester: user.name,
         status: WaterOrderStatus.Pending,
-        orderDate: new Date().toLocaleDateString('en-CA'),
         deliveryStartDate: formData.deliveryStartDate,
         requestedAmount: formData.requestedAmount,
         lateral: field.lateral,
         tapNumber: field.tapNumber,
     };
 
-    setWaterOrders([newOrder, ...waterOrders]);
-    setIsNewOrderModalOpen(false);
-    alert(`New water order for ${field.name} has been created and sent for approval.`);
+    try {
+        await createWaterOrder(newOrderData);
+        await refreshWaterOrders();
+        setIsNewOrderModalOpen(false);
+        alert(`New water order for ${field.name} has been created and sent for approval.`);
+    } catch (error) {
+        alert(`Error creating water order: ${error}`);
+    }
   };
 
-  const handleSubmitToOffice = (orderId: string) => {
-    setWaterOrders(prevOrders => prevOrders.map(order => 
-      order.id === orderId 
-        ? { ...order, status: WaterOrderStatus.Pending, requester: user.name } 
-        : order
-    ));
-    alert(`Order ${orderId} has been submitted to the water office for final approval.`);
+  const handleSubmitToOffice = async (order: WaterOrder) => {
+    const updatedOrder = { 
+        ...order, 
+        status: WaterOrderStatus.Pending, 
+        requester: user.name 
+    };
+
+    try {
+        await updateWaterOrder(order.id, updatedOrder);
+        await refreshWaterOrders();
+        alert(`Order ${order.id} has been submitted to the water office for final approval.`);
+    } catch (error) {
+        alert(`Error submitting order: ${error}`);
+    }
   };
 
   const riderRequestActions = (order: WaterOrder) => (
     <button
-      onClick={() => handleSubmitToOffice(order.id)}
+      onClick={() => handleSubmitToOffice(order)}
       className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
     >
       Review & Submit
@@ -163,8 +178,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                    {FIELDS.map(field => {
-                        const usagePercent = (field.waterUsed / field.totalWaterAllocation) * 100;
+                    {fields.map(field => {
+                        const usagePercent = field.totalWaterAllocation > 0 ? (field.waterUsed / field.totalWaterAllocation) * 100 : 0;
                         return (
                         <tr key={field.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{field.name}</td>
@@ -204,12 +219,14 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       )}
       {isUploaderOpen && (
           <WaterRequestUploader
+            fields={fields}
             onClose={() => setIsUploaderOpen(false)}
             onOrderCreated={handleImageOrderCreated}
           />
       )}
       {isNewOrderModalOpen && (
           <NewWaterOrderModal
+            fields={fields}
             onClose={() => setIsNewOrderModalOpen(false)}
             onOrderCreate={handleManualOrderCreate}
           />

@@ -1,19 +1,20 @@
-
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { User, WaterOrderStatus } from '../types';
-import { DATERANGE, REPORT_DATA, WATER_ORDERS } from '../constants';
+// Fix: Pass `waterOrders` as a prop and use it to calculate `totalOrders` and `activeDitchRiders`. This resolves the TypeScript error by using a correctly typed array and ensures the dashboard uses dynamic data from the API instead of an empty constant.
+import { User, WaterOrder } from '../types';
+import { DATERANGE, REPORT_DATA } from '../constants';
 import { WaterDropIcon, DocumentReportIcon, UserGroupIcon } from '../components/icons';
 import DashboardCard from '../components/DashboardCard';
 
 interface DistrictOfficeDashboardProps {
   user: User;
+  waterOrders: WaterOrder[];
 }
 
-const DistrictOfficeDashboard: React.FC<DistrictOfficeDashboardProps> = ({ user }) => {
+const DistrictOfficeDashboard: React.FC<DistrictOfficeDashboardProps> = ({ user, waterOrders }) => {
   const totalWaterUsed = REPORT_DATA.reduce((sum, item) => sum + item.waterUsed, 0);
-  const totalOrders = WATER_ORDERS.length;
-  const activeDitchRiders = new Set(WATER_ORDERS.map(o => o.ditchRiderId).filter(id => id)).size;
+  const totalOrders = waterOrders.length;
+  const activeDitchRiders = new Set(waterOrders.map(o => o.ditchRiderId).filter(id => id)).size;
 
   return (
     <div className="space-y-6">

@@ -1,20 +1,21 @@
+
 import React, { useState, useMemo } from 'react';
 import { Field } from '../types';
-import { FIELDS } from '../constants';
 import { XCircleIcon, DocumentAddIcon } from './icons';
 
 interface NewWaterOrderModalProps {
   onClose: () => void;
   onOrderCreate: (data: { fieldId: string; requestedAmount: number; deliveryStartDate: string; }) => void;
+  fields: Field[];
 }
 
-const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate }) => {
+const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate, fields }) => {
   const [fieldId, setFieldId] = useState<string>('');
   const [requestedAmount, setRequestedAmount] = useState<string>('');
   const [deliveryStartDate, setDeliveryStartDate] = useState<string>('');
   const [error, setError] = useState('');
 
-  const selectedField = useMemo(() => FIELDS.find(f => f.id === fieldId), [fieldId]);
+  const selectedField = useMemo(() => fields.find(f => f.id === fieldId), [fieldId, fields]);
   const today = new Date().toISOString().split('T')[0];
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -70,7 +71,7 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
                     className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
                 >
                     <option value="" disabled>Select a field...</option>
-                    {FIELDS.map(field => (
+                    {fields.map(field => (
                         <option key={field.id} value={field.id}>{field.name} ({field.owner})</option>
                     ))}
                 </select>

@@ -1,20 +1,38 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# AquaTrack - Cloud Deployment Steps
 
-# Run and deploy your AI Studio app
+This guide outlines the three main phases for deploying the AquaTrack application to AWS.
 
-This contains everything you need to run your app locally.
+Follow these steps in order. Once you've completed a step, you can ask for detailed instructions on the next one.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1KyTWsEaiiOEmAkb_wDmanqKQPW_0VVgA
+---
 
-## Run Locally
+### Phase 1: Set Up Your Database
 
-**Prerequisites:**  Node.js
+**Goal:** Create a live, cloud-based database to store your application's data.
 
+-   [ ] **Step 1:** Create a PostgreSQL database using Amazon RDS.
+-   [ ] **Step 2:** Create the necessary tables (`fields`, `water_orders`) using the `backend/schema.sql` file.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+---
+
+### Phase 2: Deploy Your Backend API
+
+**Goal:** Deploy the backend logic that connects to your database and serves data to your app.
+
+-   [ ] **Step 3:** Securely store your database credentials in AWS Secrets Manager.
+-   [ ] **Step 4:** Create and configure a Lambda function to run the backend code.
+-   [ ] **Step 5:** Create an API Gateway endpoint to make your Lambda function accessible from the internet.
+
+---
+
+### Phase 3: Deploy Your Frontend Application
+
+**Goal:** Put your user interface on the web so testers can access it.
+
+-   [ ] **Step 6:** Connect your GitHub repository to AWS Amplify Hosting.
+-   [ ] **Step 7:** Configure Amplify with your API endpoint URL and Gemini API key.
+-   [ ] **Step 8:** Deploy the application to get your public URL.
+
+---
+
+Let me know when you're ready to begin with **Step 1**.
