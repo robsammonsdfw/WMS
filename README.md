@@ -6,16 +6,16 @@ Follow these steps in order. Once you've completed a step, you can ask for detai
 
 ---
 
-### Phase 1: Set Up Your Database
+### Phase 1: Set Up Your Database (Completed)
 
 **Goal:** Create a live, cloud-based database to store your application's data.
 
--   [ ] **Step 1:** Create a PostgreSQL database using Amazon RDS.
--   [ ] **Step 2:** Create the necessary tables (`fields`, `water_orders`) using the `backend/schema.sql` file.
+-   [x] **Step 1:** Create a PostgreSQL database using Amazon RDS.
+-   [x] **Step 2:** Connect to the database and create the `fields` and `water_orders` tables.
 
 ---
 
-### Phase 2: Deploy Your Backend API
+### Phase 2: Deploy Your Backend API (In Progress)
 
 **Goal:** Deploy the backend logic that connects to your database and serves data to your app.
 
@@ -27,12 +27,12 @@ Follow these steps in order. Once you've completed a step, you can ask for detai
 
 ### Phase 3: Deploy Your Frontend Application
 
-**Goal:** Put your user interface on the web so testers can access it.
+**Goal:** Put your user interface on the web so users can access it.
 
--   [ ] **Step 6:** Connect your GitHub repository to AWS Amplify Hosting.
+-   [ ] **Step 6:** Connect your code repository to AWS Amplify Hosting.
 -   [ ] **Step 7:** Configure Amplify with your API endpoint URL and Gemini API key.
 -   [ ] **Step 8:** Deploy the application to get your public URL.
 
 ---
 
-Let me know when you're ready to begin with **Step 1**.
+Let me know when you're ready to begin with the next step.
