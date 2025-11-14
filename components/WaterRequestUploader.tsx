@@ -1,8 +1,16 @@
-
 import React, { useState, useCallback } from 'react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { XCircleIcon, CameraIcon } from './icons';
 import { Field } from '../types';
+
+// Declare the global variable that will be created by env-config.js
+declare global {
+  interface Window {
+    APP_CONFIG?: {
+      API_KEY: string;
+    };
+  }
+}
 
 interface WaterRequestUploaderProps {
   onClose: () => void;
@@ -41,9 +49,14 @@ const WaterRequestUploader: React.FC<WaterRequestUploaderProps> = ({ onClose, on
     setExtractedData(null);
 
     try {
+        const apiKey = window.APP_CONFIG?.API_KEY;
+        if (!apiKey) {
+            throw new Error("Gemini API key is not configured. Please check the deployment settings.");
+        }
+
         const base64Data = await blobToBase64(file);
         
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const ai = new GoogleGenAI({ apiKey });
         
         const imagePart = {
             inlineData: {
@@ -92,7 +105,11 @@ const WaterRequestUploader: React.FC<WaterRequestUploaderProps> = ({ onClose, on
 
     } catch (err) {
       console.error(err);
-      setError('Failed to analyze the image. Please try again with a clearer picture.');
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to analyze the image. Please try again with a clearer picture.');
+      }
     } finally {
       setIsLoading(false);
     }

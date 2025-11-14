@@ -1,12 +1,12 @@
 version: 1
 frontend:
   phases:
-    # This is a static project with no build step required.
-    # Vite/React code is being interpreted directly by the browser via import maps.
+    # This build command creates a JS file to expose the environment variable to the browser.
     build:
-      commands: []
+      commands:
+        - echo "window.APP_CONFIG = { API_KEY: '$API_KEY' }" > env-config.js
   artifacts:
-    # Deploy all files from the root of the repository.
+    # Deploy all files from the root, including the newly generated env-config.js.
     baseDirectory: /
     files:
       - '**/*'
