@@ -1,10 +1,11 @@
 version: 1
 frontend:
   phases:
+    # No build commands are needed for this static site deployment.
     build:
-      commands:
-        - echo "window.APP_CONFIG = { API_KEY: '$API_KEY' };" > env-config.js
+      commands: []
   artifacts:
+    # Serve all files from the root directory.
     baseDirectory: /
     files:
       - '**/*'

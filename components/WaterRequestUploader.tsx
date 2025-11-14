@@ -48,71 +48,19 @@ const WaterRequestUploader: React.FC<WaterRequestUploaderProps> = ({ onClose, on
     setError(null);
     setExtractedData(null);
 
-    try {
-        const apiKey = window.APP_CONFIG?.API_KEY;
-        if (!apiKey) {
-            throw new Error("Gemini API key is not configured. Please check the deployment settings.");
-        }
-
-        const base64Data = await blobToBase64(file);
-        
-        const ai = new GoogleGenAI({ apiKey });
-        
-        const imagePart = {
-            inlineData: {
-                mimeType: file.type,
-                data: base64Data,
-            },
-        };
-        
-        const textPart = {
-            text: `You are an expert at reading handwritten and typed forms for water management.
-            Analyze the provided image of a water request card. Extract the following information and return it as a JSON object.
-            If a field is not present or illegible, return null for that field.
-
-            - serialNumber: The serial number of the request card.
-            - requestDate: The date the request was made.
-            - deliveryAmount: The numerical amount of water requested.
-            - tapNumber: The tap number for the delivery.
-            - lateral: The name of the lateral for delivery.
-            - deliveryStartDate: The date the water delivery should begin.
-            - owner: The name of the owner or farm.`,
-        };
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: [imagePart, textPart] },
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        serialNumber: { type: Type.STRING, description: 'Serial number from the card' },
-                        requestDate: { type: Type.STRING, description: 'Date the request was made' },
-                        deliveryAmount: { type: Type.NUMBER, description: 'Numerical value for water amount' },
-                        tapNumber: { type: Type.STRING, description: 'Tap number for delivery' },
-                        lateral: { type: Type.STRING, description: 'Lateral name for delivery' },
-                        deliveryStartDate: { type: Type.STRING, description: 'Date delivery should start' },
-                        owner: { type: Type.STRING, description: 'Name of the farm or owner' }
-                    }
-                }
-            }
-        });
-        
-        const jsonString = response.text.trim();
-        const parsedData = JSON.parse(jsonString);
-        setExtractedData(parsedData);
-
-    } catch (err) {
-      console.error(err);
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Failed to analyze the image. Please try again with a clearer picture.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
+    // Temporarily bypass Gemini API call until API key is configured.
+    // This allows the user to upload an image and manually fill the form.
+    setError("Image analysis is not yet configured. Please fill in the details manually.");
+    setExtractedData({
+        serialNumber: '',
+        requestDate: '',
+        deliveryAmount: '',
+        tapNumber: '',
+        lateral: '',
+        deliveryStartDate: '',
+        owner: ''
+    });
+    setIsLoading(false);
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -180,7 +128,7 @@ const WaterRequestUploader: React.FC<WaterRequestUploaderProps> = ({ onClose, on
                 <h3 className="text-lg font-semibold text-gray-800">Extracted Information</h3>
                 <p className="text-sm text-gray-500 -mt-2">Please review and correct any details below before creating the order.</p>
 
-                {error && <div className="p-4 rounded-md bg-red-50 text-red-700">{error}</div>}
+                {error && <div className="p-4 rounded-md bg-yellow-50 text-yellow-800">{error}</div>}
 
                 {extractedData && (
                     <form onSubmit={handleSubmit} className="space-y-4">

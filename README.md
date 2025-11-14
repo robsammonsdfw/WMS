@@ -29,8 +29,8 @@ Follow these steps in order. Once you've completed a step, you can ask for detai
 **Goal:** Put your user interface on the web so users can access it.
 
 -   [x] **Step 5:** Connect your code repository to AWS Amplify Hosting.
--   [x] **Step 6:** Configure Amplify with your API endpoint URL and Gemini API key.
--   [ ] **Step 7:** Deploy the application to get your public URL.
+-   [x] **Step 6:** Configure Amplify with your API endpoint URL.
+-   [ ] **Step 7:** Finalize deployment and get your public URL.
 
 ---
 
