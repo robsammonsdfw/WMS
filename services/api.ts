@@ -1,9 +1,7 @@
 import { WaterOrder, Field } from '../types';
 
 // The base URL for your API Gateway endpoint.
-// This should be set in your Amplify environment variables.
-// Fix: The triple-slash directive for vite/client was causing a resolution error. Removing it and casting `import.meta` to `any` to access environment variables is a pragmatic workaround when the build environment is misconfigured.
-const API_BASE_URL = (import.meta as any).env.VITE_API_BASE_URL;
+const API_BASE_URL = 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
 
 // A helper function to handle fetch requests and errors
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
