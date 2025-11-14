@@ -1,12 +1,10 @@
 version: 1
 frontend:
   phases:
-    # This build command creates a JS file to expose the environment variable to the browser.
     build:
       commands:
-        - echo "window.APP_CONFIG = { API_KEY: '$API_KEY' }" > env-config.js
+        - echo "window.APP_CONFIG = { API_KEY: '$API_KEY' };" > env-config.js
   artifacts:
-    # Deploy all files from the root, including the newly generated env-config.js.
     baseDirectory: /
     files:
       - '**/*'
