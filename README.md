@@ -19,9 +19,8 @@ Follow these steps in order. Once you've completed a step, you can ask for detai
 
 **Goal:** Deploy the backend logic that connects to your database and serves data to your app.
 
--   [ ] **Step 3:** Securely store your database credentials in AWS Secrets Manager.
--   [ ] **Step 4:** Create and configure a Lambda function to run the backend code.
--   [ ] **Step 5:** Create an API Gateway endpoint to make your Lambda function accessible from the internet.
+-   [ ] **Step 3:** Create, configure, and deploy the Lambda function. (Current Step)
+-   [ ] **Step 4:** Create an API Gateway endpoint to make your Lambda function accessible from the internet.
 
 ---
 
@@ -29,9 +28,9 @@ Follow these steps in order. Once you've completed a step, you can ask for detai
 
 **Goal:** Put your user interface on the web so users can access it.
 
--   [ ] **Step 6:** Connect your code repository to AWS Amplify Hosting.
--   [ ] **Step 7:** Configure Amplify with your API endpoint URL and Gemini API key.
--   [ ] **Step 8:** Deploy the application to get your public URL.
+-   [ ] **Step 5:** Connect your code repository to AWS Amplify Hosting.
+-   [ ] **Step 6:** Configure Amplify with your API endpoint URL and Gemini API key.
+-   [ ] **Step 7:** Deploy the application to get your public URL.
 
 ---
 

@@ -1,12 +1,11 @@
 
-const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager");
 const pg = require("pg");
 
 // Use a global variable to cache the database client
 let dbClient;
 
 /**
- * Retrieves database credentials from AWS Secrets Manager and establishes a connection.
+ * Retrieves database credentials from environment variables and establishes a connection.
  * Caches the connection for subsequent invocations.
  */
 async function getDbClient() {
@@ -15,23 +14,23 @@ async function getDbClient() {
         return dbClient;
     }
 
-    console.log("Fetching new database credentials from Secrets Manager.");
-    // Replace 'your-secret-name-here' with the actual name of your secret in AWS Secrets Manager
-    const secretName = process.env.DB_SECRET_NAME || "aquatrack/db/credentials"; 
-    const client = new SecretsManagerClient({ region: process.env.AWS_REGION });
-    const command = new GetSecretValueCommand({ SecretId: secretName });
+    // Read credentials from environment variables
+    const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
+
+    if (!DB_HOST || !DB_PORT || !DB_USER || !DB_PASSWORD || !DB_NAME) {
+        console.error("Missing required database environment variables.");
+        throw new Error("Database configuration is incomplete. Ensure DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, and DB_NAME are set.");
+    }
     
-    const response = await client.send(command);
-    const secret = JSON.parse(response.SecretString);
-    console.log("Credentials fetched successfully.");
+    console.log("Creating new database client from environment variables.");
 
     // Create a new database client
     dbClient = new pg.Client({
-        host: secret.host,
-        port: secret.port,
-        user: secret.username,
-        password: secret.password,
-        database: secret.dbname,
+        host: DB_HOST,
+        port: parseInt(DB_PORT, 10),
+        user: DB_USER,
+        password: DB_PASSWORD,
+        database: DB_NAME,
         ssl: { 
             rejectUnauthorized: false // Required for connecting to RDS from Lambda
         }
