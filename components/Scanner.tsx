@@ -1,12 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import jsQR from 'jsqr';
 import { XCircleIcon } from './icons';
-
-// Add jsQR to the window type for TypeScript
-declare global {
-    interface Window {
-        jsQR: (data: Uint8ClampedArray, width: number, height: number) => { data: string } | null;
-    }
-}
 
 interface ScannerProps {
   onScan: (data: string) => void;
@@ -23,12 +17,6 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
     let animationFrameId: number | null = null;
 
     const startScan = async () => {
-      // Check if the jsQR library has loaded
-      if (!window.jsQR) {
-        setError('QR code scanning library could not be loaded. Please check your internet connection and try again.');
-        return;
-      }
-
       try {
         stream = await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: 'environment' } 
@@ -64,7 +52,7 @@ const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
             canvas.width = video.videoWidth;
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = window.jsQR(imageData.data, imageData.width, imageData.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
 
             if (code) {
               onScan(code.data);

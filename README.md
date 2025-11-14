@@ -24,14 +24,14 @@ Follow these steps in order. Once you've completed a step, you can ask for detai
 
 ---
 
-### Phase 3: Deploy Your Frontend Application (In Progress)
+### Phase 3: Deploy Your Frontend Application (Completed)
 
 **Goal:** Put your user interface on the web so users can access it.
 
 -   [x] **Step 5:** Connect your code repository to AWS Amplify Hosting.
 -   [x] **Step 6:** Configure Amplify with your API endpoint URL.
--   [ ] **Step 7:** Finalize deployment and get your public URL.
+-   [x] **Step 7:** Finalize deployment and get your public URL.
 
 ---
 
-Once the final deployment is successful, your application will be fully deployed.
+Congratulations! Your application is fully deployed.
