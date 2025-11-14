@@ -15,20 +15,20 @@ Follow these steps in order. Once you've completed a step, you can ask for detai
 
 ---
 
-### Phase 2: Deploy Your Backend API (In Progress)
+### Phase 2: Deploy Your Backend API (Completed)
 
 **Goal:** Deploy the backend logic that connects to your database and serves data to your app.
 
--   [ ] **Step 3:** Create, configure, and deploy the Lambda function. (Current Step)
--   [ ] **Step 4:** Create an API Gateway endpoint to make your Lambda function accessible from the internet.
+-   [x] **Step 3:** Create, configure, and deploy the Lambda function.
+-   [x] **Step 4:** Create an API Gateway endpoint to make your Lambda function accessible from the internet.
 
 ---
 
-### Phase 3: Deploy Your Frontend Application
+### Phase 3: Deploy Your Frontend Application (In Progress)
 
 **Goal:** Put your user interface on the web so users can access it.
 
--   [ ] **Step 5:** Connect your code repository to AWS Amplify Hosting.
+-   [ ] **Step 5:** Connect your code repository to AWS Amplify Hosting. (Current Step)
 -   [ ] **Step 6:** Configure Amplify with your API endpoint URL and Gemini API key.
 -   [ ] **Step 7:** Deploy the application to get your public URL.
 

@@ -1,0 +1,14 @@
+version: 1
+frontend:
+  phases:
+    # This is a static project with no build step required.
+    # Vite/React code is being interpreted directly by the browser via import maps.
+    build:
+      commands: []
+  artifacts:
+    # Deploy all files from the root of the repository.
+    baseDirectory: /
+    files:
+      - '**/*'
+  cache:
+    paths: []
