@@ -7,12 +7,11 @@ import { ClockIcon, CheckCircleIcon, RefreshIcon } from '../components/icons';
 import { updateWaterOrder } from '../services/api';
 
 interface WaterOfficeDashboardProps {
-  user: User;
   waterOrders: WaterOrder[];
   refreshWaterOrders: () => Promise<void>;
 }
 
-const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ user, waterOrders, refreshWaterOrders }) => {
+const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders, refreshWaterOrders }) => {
   const pendingOrders = waterOrders.filter(o => o.status === WaterOrderStatus.Pending);
   const approvedOrders = waterOrders.filter(o => o.status === WaterOrderStatus.Approved);
   const inProgressOrders = waterOrders.filter(o => o.status === WaterOrderStatus.InProgress);

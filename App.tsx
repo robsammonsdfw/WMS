@@ -63,10 +63,10 @@ const App: React.FC = () => {
       case UserRole.WaterManager:
         return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
       case UserRole.WaterOffice:
-        return <WaterOfficeDashboard user={currentUser} waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} />;
+        return <WaterOfficeDashboard waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} />;
       case UserRole.DistrictOffice:
         // Fix: Pass the `waterOrders` state to the `DistrictOfficeDashboard` component to provide it with the necessary data.
-        return <DistrictOfficeDashboard user={currentUser} waterOrders={waterOrders} />;
+        return <DistrictOfficeDashboard waterOrders={waterOrders} />;
       case UserRole.DitchRider:
         return <DitchRiderDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
       default:

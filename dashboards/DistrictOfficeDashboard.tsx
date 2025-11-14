@@ -7,11 +7,10 @@ import { WaterDropIcon, DocumentReportIcon, UserGroupIcon } from '../components/
 import DashboardCard from '../components/DashboardCard';
 
 interface DistrictOfficeDashboardProps {
-  user: User;
   waterOrders: WaterOrder[];
 }
 
-const DistrictOfficeDashboard: React.FC<DistrictOfficeDashboardProps> = ({ user, waterOrders }) => {
+const DistrictOfficeDashboard: React.FC<DistrictOfficeDashboardProps> = ({ waterOrders }) => {
   const totalWaterUsed = REPORT_DATA.reduce((sum, item) => sum + item.waterUsed, 0);
   const totalOrders = waterOrders.length;
   const activeDitchRiders = new Set(waterOrders.map(o => o.ditchRiderId).filter(id => id)).size;

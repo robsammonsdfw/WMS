@@ -1,5 +1,4 @@
-import React, { useState, useCallback } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
+import React, { useState } from 'react';
 import { XCircleIcon, CameraIcon } from './icons';
 import { Field } from '../types';
 
@@ -23,21 +22,6 @@ const WaterRequestUploader: React.FC<WaterRequestUploaderProps> = ({ onClose, on
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extractedData, setExtractedData] = useState<any | null>(null);
-
-  const blobToBase64 = (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result.split(',')[1]);
-        } else {
-          reject(new Error('Failed to convert blob to base64.'));
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  };
 
   const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
