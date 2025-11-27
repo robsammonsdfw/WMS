@@ -1,10 +1,10 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, UserRole, WaterOrder, Field } from './types';
 import { USERS } from './constants';
 import Header from './components/Header';
 import WaterManagerDashboard from './dashboards/WaterManagerDashboard';
 import WaterOfficeDashboard from './dashboards/WaterOfficeDashboard';
-import DistrictOfficeDashboard from './dashboards/DistrictOfficeDashboard';
 import DitchRiderDashboard from './dashboards/DitchRiderDashboard';
 import { getWaterOrders, getFields } from './services/api';
 
@@ -64,9 +64,6 @@ const App: React.FC = () => {
         return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
       case UserRole.WaterOffice:
         return <WaterOfficeDashboard waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} />;
-      case UserRole.DistrictOffice:
-        // Fix: Pass the `waterOrders` state to the `DistrictOfficeDashboard` component to provide it with the necessary data.
-        return <DistrictOfficeDashboard waterOrders={waterOrders} />;
       case UserRole.DitchRider:
         return <DitchRiderDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
       default:

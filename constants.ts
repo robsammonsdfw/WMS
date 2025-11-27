@@ -4,9 +4,7 @@ import { User, UserRole } from './types';
 export const USERS: User[] = [
   { id: 1, name: 'Mike Beus', role: UserRole.WaterManager },
   { id: 2, name: 'Central Office', role: UserRole.WaterOffice },
-  { id: 3, name: 'District Admin', role: UserRole.DistrictOffice },
   { id: 4, name: 'John Smith', role: UserRole.DitchRider },
-  { id: 5, name: 'Jane Doe', role: UserRole.DitchRider },
 ];
 
 export const FIELDS: [] = []; // Data will be fetched from the database
