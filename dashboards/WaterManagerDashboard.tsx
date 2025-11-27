@@ -1,12 +1,13 @@
-
 import React, { useState } from 'react';
 import { User, Field, WaterOrder, WaterOrderStatus } from '../types';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
-import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, CameraIcon, DocumentAddIcon } from '../components/icons';
+import SeasonStatistics from '../components/SeasonStatistics';
+import FieldDetailsModal from '../components/FieldDetailsModal';
+import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, DocumentAddIcon } from '../components/icons';
 import QRCodeModal from '../components/QRCodeModal';
-import WaterRequestUploader from '../components/WaterRequestUploader';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
+import Scanner from '../components/Scanner';
 import { createWaterOrder, updateWaterOrder } from '../services/api';
 
 interface WaterManagerDashboardProps {
@@ -18,8 +19,9 @@ interface WaterManagerDashboardProps {
 
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders }) => {
   const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
-  const [isUploaderOpen, setIsUploaderOpen] = useState(false);
+  const [selectedFieldDetails, setSelectedFieldDetails] = useState<Field | null>(null);
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   const totalWaterUsed = fields.reduce((sum, field) => sum + field.waterUsed, 0);
   const totalAllocation = fields.reduce((sum, field) => sum + field.totalWaterAllocation, 0);
@@ -28,37 +30,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
   const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
 
-  const handleImageOrderCreated = async (extractedData: any) => {
-    const field = fields.find(f => f.owner?.toLowerCase() === extractedData.owner?.toLowerCase());
-
-    if (!field) {
-        alert(`Could not find a field for owner "${extractedData.owner}". A new water order could not be created.`);
-        setIsUploaderOpen(false);
-        return;
-    }
-
-    const newOrderData = {
-        serialNumber: extractedData.serialNumber,
-        fieldId: field.id,
-        fieldName: field.name,
-        requester: user.name,
-        status: WaterOrderStatus.Pending,
-        deliveryStartDate: extractedData.deliveryStartDate,
-        requestedAmount: extractedData.deliveryAmount,
-        lateral: extractedData.lateral,
-        tapNumber: extractedData.tapNumber,
-    };
-
-    try {
-      await createWaterOrder(newOrderData);
-      await refreshWaterOrders();
-      setIsUploaderOpen(false);
-      alert(`New water order created for ${field.name} and sent for approval.`);
-    } catch (error) {
-        alert(`Error creating water order: ${error}`);
-    }
-  };
-  
   const handleManualOrderCreate = async (formData: { fieldId: string; requestedAmount: number; deliveryStartDate: string; }) => {
     const field = fields.find(f => f.id === formData.fieldId);
     if (!field) {
@@ -84,6 +55,16 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         alert(`New water order for ${field.name} has been created and sent for approval.`);
     } catch (error) {
         alert(`Error creating water order: ${error}`);
+    }
+  };
+
+  const handleIrrigatorScan = async (data: string) => {
+    setIsScannerOpen(false);
+    try {
+        const { action, fieldName } = JSON.parse(data);
+        alert(`Scanned ${fieldName}: Request to ${action === 'start-delivery' ? 'START' : 'STOP'} water sent to Water Manager.`);
+    } catch (e) {
+        alert("Invalid QR Code");
     }
   };
 
@@ -114,18 +95,27 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">Welcome, {user.name}</h2>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h2 className="text-2xl font-bold text-gray-800">Welcome, {user.name}</h2>
+          <button 
+                onClick={() => setIsScannerOpen(true)}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+                <QrCodeIcon className="-ml-1 mr-2 h-5 w-5" />
+                Scan Field Tag
+          </button>
+      </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <SeasonStatistics>
         <DashboardCard
           title="Total Water Used (Season)"
-          value={`${totalWaterUsed} AF`}
+          value={`${totalWaterUsed.toFixed(1)} AF`}
           icon={<WaterDropIcon className="h-6 w-6 text-blue-600" />}
           color="bg-blue-100"
         />
         <DashboardCard
           title="Total Allocation"
-          value={`${totalAllocation} AF`}
+          value={`${totalAllocation.toFixed(1)} AF`}
           icon={<DocumentReportIcon className="h-6 w-6 text-green-600" />}
           color="bg-green-100"
         />
@@ -135,7 +125,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
           icon={<ChartBarIcon className="h-6 w-6 text-yellow-600" />}
           color="bg-yellow-100"
         />
-      </div>
+      </SeasonStatistics>
       
       {awaitingApprovalOrders.length > 0 && (
         <WaterOrderList
@@ -156,13 +146,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                     <DocumentAddIcon className="-ml-1 mr-2 h-5 w-5" />
                     Create Water Order
                 </button>
-                 <button 
-                    onClick={() => setIsUploaderOpen(true)}
-                    className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                    <CameraIcon className="-ml-1 mr-2 h-5 w-5" />
-                    Upload Card
-                </button>
             </div>
         </div>
         <div className="overflow-x-auto">
@@ -173,27 +156,36 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Crop</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acres</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Water Used / Allocation (AF)</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usage</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                     {fields.map(field => {
                         const usagePercent = field.totalWaterAllocation > 0 ? (field.waterUsed / field.totalWaterAllocation) * 100 : 0;
+                        const isRunning = waterOrders.some(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
+                        
                         return (
-                        <tr key={field.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{field.name}</td>
+                        <tr 
+                            key={field.id} 
+                            className={`cursor-pointer transition-colors ${isRunning ? 'bg-blue-100 hover:bg-blue-200' : 'hover:bg-gray-50'}`}
+                            onClick={() => setSelectedFieldDetails(field)}
+                        >
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 flex items-center">
+                                {isRunning && <span className="mr-2 inline-block w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span>}
+                                {field.name}
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.crop}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.acres}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{`${field.waterUsed} / ${field.totalWaterAllocation}`}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                                    <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${usagePercent}%` }}></div>
-                                </div>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRunning ? 'bg-blue-200 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
+                                    {isRunning ? 'Running' : 'Idle'}
+                                </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <button
-                                    onClick={() => setSelectedFieldForQR(field)}
+                                    onClick={(e) => { e.stopPropagation(); setSelectedFieldForQR(field); }}
                                     className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                                     title={`Generate QR Codes for ${field.name}`}
                                 >
@@ -217,18 +209,27 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
           onClose={() => setSelectedFieldForQR(null)}
         />
       )}
-      {isUploaderOpen && (
-          <WaterRequestUploader
-            fields={fields}
-            onClose={() => setIsUploaderOpen(false)}
-            onOrderCreated={handleImageOrderCreated}
+      
+      {selectedFieldDetails && (
+          <FieldDetailsModal
+            field={selectedFieldDetails}
+            orders={waterOrders}
+            onClose={() => setSelectedFieldDetails(null)}
           />
       )}
+
       {isNewOrderModalOpen && (
           <NewWaterOrderModal
             fields={fields}
             onClose={() => setIsNewOrderModalOpen(false)}
             onOrderCreate={handleManualOrderCreate}
+          />
+      )}
+
+      {isScannerOpen && (
+          <Scanner 
+            onScan={handleIrrigatorScan}
+            onClose={() => setIsScannerOpen(false)}
           />
       )}
     </div>

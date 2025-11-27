@@ -1,7 +1,6 @@
-
 import React, { useMemo, useState } from 'react';
 import { User, WaterOrder, WaterOrderStatus, Field } from '../types';
-import { QrCodeIcon } from '../components/icons';
+import { QrCodeIcon, CheckCircleIcon, XCircleIcon } from '../components/icons';
 import Scanner from '../components/Scanner';
 import { createWaterOrder, updateWaterOrder } from '../services/api';
 
@@ -14,11 +13,19 @@ interface DitchRiderDashboardProps {
 
 const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders }) => {
   const [isScanning, setIsScanning] = useState(false);
+  const [activeTab, setActiveTab] = useState<'start' | 'stop'>('start');
   
-  const myOrders = waterOrders.filter(o => o.ditchRiderId === user.id && (o.status === WaterOrderStatus.Approved || o.status === WaterOrderStatus.InProgress));
+  // Filter my orders
+  const myOrders = waterOrders.filter(o => o.ditchRiderId === user.id);
+
+  // Grouped for Tabs
+  const startOrders = myOrders.filter(o => o.status === WaterOrderStatus.Approved);
+  const stopOrders = myOrders.filter(o => o.status === WaterOrderStatus.InProgress);
+
+  const currentList = activeTab === 'start' ? startOrders : stopOrders;
 
   const ordersByLateral = useMemo(() => {
-    return myOrders.reduce((acc, order) => {
+    return currentList.reduce((acc, order) => {
       const lateral = order.lateral || 'Unassigned';
       if (!acc[lateral]) {
         acc[lateral] = [];
@@ -26,7 +33,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
       acc[lateral].push(order);
       return acc;
     }, {} as Record<string, WaterOrder[]>);
-  }, [myOrders]);
+  }, [currentList]);
   
   const handleScan = async (data: string) => {
     setIsScanning(false);
@@ -34,49 +41,28 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
       const { action, fieldId, fieldName } = JSON.parse(data);
       
       if (action === 'start-delivery') {
-        const field = fields.find(f => f.id === fieldId);
-        if (!field) {
-            alert(`Field with ID ${fieldId} not found.`);
-            return;
-        }
-
-        const newOrderData = {
-          fieldId,
-          fieldName,
-          requester: user.name, // Ditch rider is the initial requester
-          status: WaterOrderStatus.AwaitingApproval,
-          deliveryStartDate: new Date().toISOString(),
-          requestedAmount: 0, // Manager needs to confirm/enter this
-          ditchRiderId: user.id,
-          lateral: field.lateral,
-          tapNumber: field.tapNumber,
-        };
-
-        try {
-            await createWaterOrder(newOrderData);
-            await refreshWaterOrders();
-            alert(`Started water delivery for ${fieldName}. A request has been sent to the water manager for approval.`);
-        } catch(error) {
-            alert(`Failed to create order: ${error}`);
+        // ... Logic for starting delivery
+        const orderToStart = startOrders.find(o => o.fieldId === fieldId);
+        
+        if (orderToStart) {
+             // If we have an approved order, update it
+             await updateWaterOrder(orderToStart.id, { ...orderToStart, status: WaterOrderStatus.InProgress });
+             await refreshWaterOrders();
+             alert(`Delivery STARTED for ${fieldName}.`);
+        } else {
+            // Fallback: Create new if logic allows, or just alert
+             alert(`No approved order found for ${fieldName} to start.`);
         }
 
       } else if (action === 'end-delivery') {
-        const orderToEnd = waterOrders.find(o => 
-          o.fieldId === fieldId && 
-          o.status === WaterOrderStatus.InProgress &&
-          o.ditchRiderId === user.id
-        );
+        const orderToEnd = stopOrders.find(o => o.fieldId === fieldId);
 
         if (orderToEnd) {
-            try {
-                await updateWaterOrder(orderToEnd.id, { ...orderToEnd, status: WaterOrderStatus.Completed });
-                await refreshWaterOrders();
-                alert(`Ended water delivery for ${fieldName}.`);
-            } catch (error) {
-                alert(`Failed to end delivery: ${error}`);
-            }
+            await updateWaterOrder(orderToEnd.id, { ...orderToEnd, status: WaterOrderStatus.Completed });
+            await refreshWaterOrders();
+            alert(`Delivery ENDED for ${fieldName}. Alert sent to Water Manager.`);
         } else {
-          alert(`No "In Progress" order for "${fieldName}" was found for you.`);
+          alert(`No active delivery found for "${fieldName}" to stop.`);
         }
       } else {
         alert('Invalid QR code action.');
@@ -88,60 +74,68 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
     }
   };
 
-  const OrderCard: React.FC<{order: WaterOrder}> = ({ order }) => (
-    <div className="bg-white rounded-lg shadow p-4 space-y-3">
-        <div className="flex justify-between items-start">
-            <div>
-                <p className="font-bold text-gray-800">{order.fieldName}</p>
-                <p className="text-sm text-gray-500">Order ID: {order.id}</p>
-            </div>
-            {order.status === WaterOrderStatus.InProgress && 
-                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 animate-pulse">In Progress</span>
-            }
-            {order.status === WaterOrderStatus.Approved && 
-                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Ready to Start</span>
-            }
-        </div>
-        <p className="text-gray-700">Requested Amount: <span className="font-semibold">{order.requestedAmount} AF</span></p>
-        
-        <p className="text-sm text-gray-600">Use QR code at headgate to start or stop delivery.</p>
-
-    </div>
-  );
-
-
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-2xl mx-auto pb-24">
         <div className="text-center">
-            <h2 className="text-2xl font-bold text-gray-800">Ditch Rider Tasks</h2>
-            <p className="text-gray-600">Welcome, {user.name}</p>
+            <h2 className="text-2xl font-bold text-gray-800">Ditch Rider Control</h2>
+            <p className="text-gray-600">Tasks for {user.name}</p>
+        </div>
+
+        {/* Tabs */}
+        <div className="bg-white rounded-lg shadow p-1 flex">
+            <button 
+                onClick={() => setActiveTab('start')}
+                className={`flex-1 py-3 text-center rounded-md font-bold text-lg transition-colors ${activeTab === 'start' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+                Turn ON ({startOrders.length})
+            </button>
+            <button 
+                onClick={() => setActiveTab('stop')}
+                className={`flex-1 py-3 text-center rounded-md font-bold text-lg transition-colors ${activeTab === 'stop' ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+                Turn OFF ({stopOrders.length})
+            </button>
         </div>
       
-      {Object.keys(ordersByLateral).map((lateral) => (
-        <div key={lateral}>
-          <h3 className="text-xl font-semibold text-gray-700 mb-2 px-1">Lateral {lateral}</h3>
-          <div className="space-y-4">
-            {ordersByLateral[lateral].map(order => <OrderCard key={order.id} order={order} />)}
+      {Object.keys(ordersByLateral).length === 0 ? (
+          <div className="text-center py-10 bg-white rounded-lg shadow-sm border border-gray-100">
+            <p className="text-gray-500 text-lg">No tasks in this category.</p>
           </div>
-        </div>
-      ))}
-
-      {myOrders.length === 0 && (
-        <div className="text-center py-10 bg-white rounded-lg shadow">
-            <h3 className="text-lg font-medium text-gray-800">No active orders assigned.</h3>
-            <p className="text-gray-500">Check back later for new tasks.</p>
-        </div>
+      ) : (
+          Object.keys(ordersByLateral).map((lateral) => (
+            <div key={lateral} className="animate-fade-in">
+            <h3 className="text-xl font-semibold text-gray-700 mb-3 px-2 border-b border-gray-200 pb-1">Lateral {lateral}</h3>
+            <div className="space-y-4">
+                {ordersByLateral[lateral].map(order => (
+                    <div key={order.id} className="bg-white rounded-lg shadow-md overflow-hidden border-l-4 border-gray-300">
+                        <div className="p-5">
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                    <h4 className="text-xl font-bold text-gray-800">{order.fieldName}</h4>
+                                    <p className="text-sm text-gray-500">Tap: {order.tapNumber || 'N/A'}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-lg font-bold text-gray-900">{order.requestedAmount} AF</p>
+                                    <p className="text-xs text-gray-500">Requested</p>
+                                </div>
+                            </div>
+                            
+                            <div className="mt-4">
+                                <button 
+                                    onClick={() => setIsScanning(true)}
+                                    className={`w-full py-4 rounded-lg font-bold text-xl text-white shadow-sm flex items-center justify-center space-x-2 transition-transform active:scale-95 ${activeTab === 'start' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'}`}
+                                >
+                                    <QrCodeIcon className="h-6 w-6" />
+                                    <span>{activeTab === 'start' ? 'SCAN TO TURN ON' : 'SCAN TO TURN OFF'}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            </div>
+        ))
       )}
-
-      <div className="fixed bottom-6 right-6">
-        <button 
-          onClick={() => setIsScanning(true)}
-          className="flex items-center justify-center w-16 h-16 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transform transition-transform hover:scale-110"
-          aria-label="Scan QR Code"
-        >
-          <QrCodeIcon className="h-8 w-8" />
-        </button>
-      </div>
 
       {isScanning && (
         <Scanner

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Field } from '../types';
 import { XCircleIcon, DocumentAddIcon } from './icons';
@@ -11,7 +10,7 @@ interface NewWaterOrderModalProps {
 
 const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate, fields }) => {
   const [fieldId, setFieldId] = useState<string>('');
-  const [requestedAmount, setRequestedAmount] = useState<string>('');
+  const [inchesRequested, setInchesRequested] = useState<string>('');
   const [deliveryStartDate, setDeliveryStartDate] = useState<string>('');
   const [error, setError] = useState('');
 
@@ -22,15 +21,25 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
     e.preventDefault();
     setError('');
     
-    const amount = parseFloat(requestedAmount);
-    if (!fieldId || !requestedAmount || amount <= 0 || !deliveryStartDate) {
+    const inches = parseFloat(inchesRequested);
+    
+    if (!fieldId || !inchesRequested || inches <= 0 || !deliveryStartDate) {
       setError('Please fill out all fields with valid information.');
       return;
     }
+    
+    if (!selectedField) {
+        setError('Invalid field selected.');
+        return;
+    }
+
+    // Convert Inches to Acre-Feet (AF)
+    // Formula: AF = (Inches / 12) * Acres
+    const amountAF = (inches / 12) * selectedField.acres;
 
     onOrderCreate({
       fieldId,
-      requestedAmount: amount,
+      requestedAmount: parseFloat(amountAF.toFixed(2)),
       deliveryStartDate,
     });
   };
@@ -78,25 +87,31 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
             </div>
             
             {selectedField && (
-                <div className="p-3 bg-gray-50 rounded-md border border-gray-200 text-sm">
+                <div className="p-3 bg-gray-50 rounded-md border border-gray-200 text-sm grid grid-cols-2 gap-2">
                     <p><span className="font-medium text-gray-600">Lateral:</span> {selectedField.lateral}</p>
                     <p><span className="font-medium text-gray-600">Tap Number:</span> {selectedField.tapNumber}</p>
+                    <p><span className="font-medium text-gray-600">Acres:</span> {selectedField.acres}</p>
                 </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                  <div>
-                    <label htmlFor="amount" className="block text-sm font-medium text-gray-700">Requested Amount (AF)</label>
+                    <label htmlFor="inches" className="block text-sm font-medium text-gray-700">Inches Requested</label>
                     <input
                         type="number"
-                        id="amount"
-                        value={requestedAmount}
-                        onChange={(e) => setRequestedAmount(e.target.value)}
+                        id="inches"
+                        value={inchesRequested}
+                        onChange={(e) => setInchesRequested(e.target.value)}
                         min="0.1"
                         step="0.1"
                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        placeholder="e.g., 50"
+                        placeholder="e.g., 2.5"
                     />
+                    {selectedField && inchesRequested && (
+                        <p className="text-xs text-gray-500 mt-1">
+                            ≈ {((parseFloat(inchesRequested) / 12) * selectedField.acres).toFixed(2)} AF
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label htmlFor="date" className="block text-sm font-medium text-gray-700">Delivery Start Date</label>
