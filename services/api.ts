@@ -1,3 +1,4 @@
+
 import { WaterOrder, Field } from '../types';
 
 // Declare global to access window.APP_CONFIG
@@ -15,7 +16,6 @@ const getBaseUrl = () => {
   if (typeof window !== 'undefined' && window.APP_CONFIG?.API_BASE_URL) {
     return window.APP_CONFIG.API_BASE_URL;
   }
-  // Updated to match the ID and Region from your screenshot
   // @ts-ignore
   return (import.meta as any).env.VITE_API_BASE_URL || 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/v1';
 };
@@ -58,8 +58,14 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
             throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
         return response.json();
-    } catch (error) {
+    } catch (error: any) {
         console.error(`API call to ${endpoint} failed:`, error);
+        
+        // Check for specific CORS/Network failure
+        if (error instanceof TypeError && error.message === "Failed to fetch") {
+            throw new Error("Connection failed. This is likely a CORS issue. Please go to AWS API Gateway > CORS and enable it for your API.");
+        }
+        
         throw error;
     }
 };
