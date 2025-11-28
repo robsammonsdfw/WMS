@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { User, Field, WaterOrder, WaterOrderStatus } from '../types';
 import DashboardCard from '../components/DashboardCard';
@@ -53,8 +54,9 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         await refreshWaterOrders();
         setIsNewOrderModalOpen(false);
         alert(`New water order for ${field.name} has been created and sent for approval.`);
-    } catch (error) {
-        alert(`Error creating water order: ${error}`);
+    } catch (error: any) {
+        // Display the direct message without "Error: Error:" prefix
+        alert(error.message || error);
     }
   };
 
@@ -79,8 +81,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         await updateWaterOrder(order.id, updatedOrder);
         await refreshWaterOrders();
         alert(`Order ${order.id} has been submitted to the water office for final approval.`);
-    } catch (error) {
-        alert(`Error submitting order: ${error}`);
+    } catch (error: any) {
+        alert(`Error submitting order: ${error.message || error}`);
     }
   };
 

@@ -76,8 +76,14 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
             // Provide a more helpful error for the specific Gateway 403
             if (response.status === 403 && (errorData.message === "Missing Authentication Token" || errorData.message === "Forbidden")) {
                  console.error(`[API Error] Access Denied for URL: ${url}`);
-                 const method = options.method || 'GET';
-                 throw new Error(`Access Denied: API Gateway rejected the ${method} request to ${cleanEndpoint}. Check that your URL ends in '/v1' and the route exists.`);
+                 const method = (options.method || 'GET').toUpperCase();
+                 
+                 // If trying to POST, it's almost certainly a missing method in Gateway
+                 if (method === 'POST') {
+                     throw new Error(`AWS Configuration Error: The 'POST' method is missing for ${cleanEndpoint} in API Gateway. \n\nTo fix this: Go to AWS Console > API Gateway > Resources > ${cleanEndpoint} > Actions > Create Method > POST. Then click Actions > Deploy API.`);
+                 }
+
+                 throw new Error(`Access Denied: API Gateway rejected the request. Check that your URL ends in '/v1' and the route exists in the 'v1' stage.`);
             }
 
             throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
