@@ -101,8 +101,8 @@ exports.handler = async (event) => {
     
     // Add CORS headers to every response to allow the frontend to call the API
     response.headers = {
-        "Access-Control-Allow-Origin": "*", // For production, restrict this to your Amplify app's URL
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Origin": "*", 
+        "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
     };
     

@@ -1,23 +1,59 @@
 import { WaterOrder, Field } from '../types';
 
-// The base URL for your API Gateway endpoint.
-const API_BASE_URL = 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
+// Declare global to access window.APP_CONFIG
+declare global {
+  interface Window {
+    APP_CONFIG?: {
+      API_KEY?: string;
+      API_BASE_URL?: string;
+    };
+  }
+}
+
+// Helper to get configuration with fallbacks
+const getBaseUrl = () => {
+  if (typeof window !== 'undefined' && window.APP_CONFIG?.API_BASE_URL) {
+    return window.APP_CONFIG.API_BASE_URL;
+  }
+  // @ts-ignore
+  return (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
+};
+
+const getApiKey = () => {
+  if (typeof window !== 'undefined' && window.APP_CONFIG?.API_KEY) {
+    return window.APP_CONFIG.API_KEY;
+  }
+  // @ts-ignore
+  return (import.meta as any).env.VITE_API_KEY;
+};
 
 // A helper function to handle fetch requests and errors
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
-    const url = `${API_BASE_URL}${endpoint}`;
+    const url = `${getBaseUrl()}${endpoint}`;
+    const apiKey = getApiKey();
     
     // Set default headers
-    const headers = {
+    const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        ...options.headers,
+        ...options.headers as Record<string, string>,
     };
+
+    // Add API Key if available
+    if (apiKey) {
+      headers['x-api-key'] = apiKey;
+    }
 
     try {
         const response = await fetch(url, { ...options, headers });
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred' }));
+            
+            // Provide a more helpful error for the specific Gateway 403
+            if (response.status === 403 && errorData.message === "Missing Authentication Token") {
+                 throw new Error("Access Denied: The API Gateway rejected the request. This usually means the API Key is missing or the endpoint URL is incorrect.");
+            }
+
             throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
         return response.json();

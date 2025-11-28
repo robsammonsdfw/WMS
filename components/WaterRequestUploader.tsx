@@ -6,7 +6,8 @@ import { Field } from '../types';
 declare global {
   interface Window {
     APP_CONFIG?: {
-      API_KEY: string;
+      API_KEY?: string;
+      API_BASE_URL?: string;
     };
   }
 }
