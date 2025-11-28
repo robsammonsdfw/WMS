@@ -13,13 +13,29 @@ declare global {
 
 // Helper to get configuration with fallbacks
 const getBaseUrl = () => {
+  let url = '';
+  
   if (typeof window !== 'undefined' && window.APP_CONFIG?.API_BASE_URL) {
-    return window.APP_CONFIG.API_BASE_URL;
+    url = window.APP_CONFIG.API_BASE_URL;
+  } else {
+    // @ts-ignore
+    url = (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
   }
-  // @ts-ignore
-  // Updated to us-east-1 API ID from user screenshot (e6msras3ml).
-  // Removed /v1 suffix to ensure compatibility with default API Gateway routes.
-  return (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com';
+
+  // Safety check: Ensure the /v1 stage is present for this specific API Gateway.
+  // This prevents CORS/403 errors if the environment variable is set without the stage.
+  if (url.includes('execute-api.us-east-1.amazonaws.com')) {
+      // Remove trailing slash if present
+      if (url.endsWith('/')) {
+          url = url.slice(0, -1);
+      }
+      // Append /v1 if missing
+      if (!url.endsWith('/v1')) {
+          url = `${url}/v1`;
+      }
+  }
+
+  return url;
 };
 
 const getApiKey = () => {
@@ -58,20 +74,23 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
             const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred' }));
             
             // Provide a more helpful error for the specific Gateway 403
-            if (response.status === 403 && errorData.message === "Missing Authentication Token") {
+            if (response.status === 403 && (errorData.message === "Missing Authentication Token" || errorData.message === "Forbidden")) {
                  console.error(`[API Error] Access Denied for URL: ${url}`);
-                 throw new Error("Access Denied: The API Gateway rejected the request. Ensure you have deployed the routes (GET/POST /orders) in the API Gateway Console.");
+                 const method = options.method || 'GET';
+                 throw new Error(`Access Denied: API Gateway rejected the ${method} request to ${cleanEndpoint}. Check that your URL ends in '/v1' and the route exists.`);
             }
 
             throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
         return response.json();
     } catch (error: any) {
-        console.error(`API call to ${endpoint} failed:`, error);
+        console.error(`API call to ${url} failed:`, error);
         
         // Check for specific CORS/Network failure
         if (error instanceof TypeError && error.message === "Failed to fetch") {
-            throw new Error("Connection failed. This is likely a CORS issue. Please go to AWS API Gateway > CORS and enable it for your API.");
+            // This is often caused by a 403 from Gateway (due to missing /v1) which doesn't return CORS headers,
+            // resulting in a generic "Failed to fetch" in the browser.
+            throw new Error(`Connection failed (CORS). This usually means the API URL is incorrect (missing '/v1') or the backend is offline. Trying to access: ${url}`);
         }
         
         throw error;
