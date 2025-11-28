@@ -17,8 +17,9 @@ const getBaseUrl = () => {
     return window.APP_CONFIG.API_BASE_URL;
   }
   // @ts-ignore
-  // Updated to us-east-1 API ID from user screenshot (e6msras3ml)
-  return (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
+  // Updated to us-east-1 API ID from user screenshot (e6msras3ml).
+  // Removed /v1 suffix to ensure compatibility with default API Gateway routes.
+  return (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com';
 };
 
 const getApiKey = () => {
@@ -31,7 +32,12 @@ const getApiKey = () => {
 
 // A helper function to handle fetch requests and errors
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
-    const url = `${getBaseUrl()}${endpoint}`;
+    const baseUrl = getBaseUrl();
+    // Ensure no double slashes if baseUrl has one and endpoint has one
+    const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = `${cleanBase}${cleanEndpoint}`;
+
     const apiKey = getApiKey();
     
     // Set default headers
@@ -53,6 +59,7 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
             
             // Provide a more helpful error for the specific Gateway 403
             if (response.status === 403 && errorData.message === "Missing Authentication Token") {
+                 console.error(`[API Error] Access Denied for URL: ${url}`);
                  throw new Error("Access Denied: The API Gateway rejected the request. Ensure you have deployed the routes (GET/POST /orders) in the API Gateway Console.");
             }
 
