@@ -17,7 +17,8 @@ const getBaseUrl = () => {
     return window.APP_CONFIG.API_BASE_URL;
   }
   // @ts-ignore
-  return (import.meta as any).env.VITE_API_BASE_URL || 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/v1';
+  // Updated to us-east-1 API ID from user screenshot (e6msras3ml)
+  return (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
 };
 
 const getApiKey = () => {
