@@ -15,8 +15,9 @@ const getBaseUrl = () => {
   if (typeof window !== 'undefined' && window.APP_CONFIG?.API_BASE_URL) {
     return window.APP_CONFIG.API_BASE_URL;
   }
+  // Updated to match the ID and Region from your screenshot
   // @ts-ignore
-  return (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
+  return (import.meta as any).env.VITE_API_BASE_URL || 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/v1';
 };
 
 const getApiKey = () => {
@@ -38,7 +39,7 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
         ...options.headers as Record<string, string>,
     };
 
-    // Add API Key if available
+    // Add API Key if available (Optional for HTTP APIs usually)
     if (apiKey) {
       headers['x-api-key'] = apiKey;
     }
@@ -51,7 +52,7 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
             
             // Provide a more helpful error for the specific Gateway 403
             if (response.status === 403 && errorData.message === "Missing Authentication Token") {
-                 throw new Error("Access Denied: The API Gateway rejected the request. This usually means the API Key is missing or the endpoint URL is incorrect.");
+                 throw new Error("Access Denied: The API Gateway rejected the request. Ensure you have deployed the routes (GET/POST /orders) in the API Gateway Console.");
             }
 
             throw new Error(errorData.message || `HTTP error! status: ${response.status}`);

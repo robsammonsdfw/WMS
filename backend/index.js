@@ -48,10 +48,27 @@ async function getDbClient() {
  */
 exports.handler = async (event) => {
     const client = await getDbClient();
-    const resource = event.resource; // e.g., "/orders" or "/orders/{id}"
-    const httpMethod = event.httpMethod; // e.g., "GET", "POST"
+    
+    // --- ADAPTER FOR HTTP API vs REST API ---
+    // HTTP API (v2) uses event.routeKey (e.g. "GET /orders")
+    // REST API (v1) uses event.resource (e.g. "/orders") + event.httpMethod
+    
+    let resource, httpMethod;
     const pathParameters = event.pathParameters || {};
     const body = event.body ? JSON.parse(event.body) : {};
+
+    if (event.routeKey) {
+        // Handle HTTP API Format
+        const [method, path] = event.routeKey.split(' ');
+        httpMethod = method;
+        resource = path; // In v2, routeKey preserves the parameter placeholders like /orders/{id}
+    } else {
+        // Handle REST API Format (Legacy)
+        resource = event.resource;
+        httpMethod = event.httpMethod;
+    }
+
+    console.log(`Processing: ${httpMethod} ${resource}`);
 
     let response;
 
@@ -81,9 +98,12 @@ exports.handler = async (event) => {
 
         } else if (resource === "/orders/{id}" && httpMethod === "PUT") {
             const { id } = pathParameters;
-            const { status, requester } = body; // Add other fields as needed
-            const query = "UPDATE water_orders SET status = $1, requester = $2 WHERE id = $3 RETURNING *;";
-            const result = await client.query(query, [status, requester, id]);
+            const { status, requester } = body; 
+            
+            // We use COALESCE or dynamic query building in a real app, but for now we update status and/or requester
+            // Note: If you need to update other fields, add them to the query
+            const query = "UPDATE water_orders SET status = $1 WHERE id = $2 RETURNING *;";
+            const result = await client.query(query, [status, id]);
             response = { statusCode: 200, body: JSON.stringify(result.rows[0]) };
         
         // --- Fields Routes ---
@@ -92,14 +112,14 @@ exports.handler = async (event) => {
             response = { statusCode: 200, body: JSON.stringify(result.rows) };
         
         } else {
-            response = { statusCode: 404, body: JSON.stringify({ message: "Not Found" }) };
+            response = { statusCode: 404, body: JSON.stringify({ message: `Route not found: ${httpMethod} ${resource}` }) };
         }
     } catch (error) {
         console.error("Handler error:", error);
         response = { statusCode: 500, body: JSON.stringify({ message: "Internal Server Error", error: error.message }) };
     }
     
-    // Add CORS headers to every response to allow the frontend to call the API
+    // Add CORS headers to every response
     response.headers = {
         "Access-Control-Allow-Origin": "*", 
         "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
