@@ -189,7 +189,10 @@ const WaterUsageAlertModal: React.FC<WaterUsageAlertModalProps> = ({ field, onCl
                     <h3 className="text-sm font-bold text-gray-700 mb-3">Available Accounts for Field</h3>
                     <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                         {otherAccounts.length > 0 ? (
-                            otherAccounts.map(account => (
+                            otherAccounts.map(account => {
+                                const usage = account.usageForField || 0;
+                                const total = account.allocationForField || 0;
+                                return (
                                 <div
                                     key={account.id}
                                     draggable
@@ -201,12 +204,11 @@ const WaterUsageAlertModal: React.FC<WaterUsageAlertModalProps> = ({ field, onCl
                                         <p className="text-xs text-gray-500">{account.ownerName}</p>
                                     </div>
                                     <div className="text-right">
-                                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded group-hover:bg-blue-100 group-hover:text-blue-700">
-                                            {account.allocationForField} AF
-                                        </span>
+                                        <p className="text-sm font-semibold text-gray-800">{usage.toFixed(1)} / {total} AF</p>
+                                        <p className="text-xs text-gray-500">{(total - usage).toFixed(1)} AF Left</p>
                                     </div>
                                 </div>
-                            ))
+                            )})
                         ) : (
                             <p className="text-sm text-gray-500 italic p-2 border border-dashed rounded">No other accounts linked to this field.</p>
                         )}

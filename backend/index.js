@@ -32,6 +32,7 @@ async function getDbClient() {
     
     // --- SCHEMA INITIALIZATION (Run once/idempotent) ---
     // This ensures the new tables for the Alert/Water Bank feature exist.
+    // NOTE: In a production migration, you would separate these.
     const schemaQuery = `
         CREATE TABLE IF NOT EXISTS accounts (
             id SERIAL PRIMARY KEY,
@@ -52,12 +53,63 @@ async function getDbClient() {
 
         CREATE TABLE IF NOT EXISTS water_bank (
             id SERIAL PRIMARY KEY,
-            owner_name VARCHAR(255),
+            account_id INT REFERENCES accounts(id), -- Linked to the seller/owner account
             lateral VARCHAR(50),
             amount_available NUMERIC(10, 2),
-            source VARCHAR(100),
-            field_association VARCHAR(255)
+            source VARCHAR(100), -- e.g., 'Saved Allocation', 'Market Purchase'
+            field_association VARCHAR(255), -- Text reference to origin field
+            created_at TIMESTAMP DEFAULT NOW()
         );
+
+        -- VIEW: Water Bank View (Combines Bank data with Account Owner Names)
+        CREATE OR REPLACE VIEW water_bank_view AS
+        SELECT 
+            wb.id,
+            a.owner_name,
+            wb.lateral,
+            wb.amount_available,
+            wb.source,
+            wb.field_association
+        FROM water_bank wb
+        LEFT JOIN accounts a ON wb.account_id = a.id;
+
+        -- FUNCTION & TRIGGER: Auto-switch account when usage limit is reached
+        CREATE OR REPLACE FUNCTION check_usage_limit() RETURNS TRIGGER AS $$
+        DECLARE
+            queued_account_id INT;
+        BEGIN
+            -- Check if usage exceeds or equals allocation and the account is currently active
+            IF NEW.usage_for_field >= NEW.allocation_for_field AND NEW.is_active = TRUE THEN
+                
+                -- Find the queued account for this specific field
+                SELECT account_id INTO queued_account_id
+                FROM field_accounts
+                WHERE field_id = NEW.field_id AND is_queued = TRUE
+                LIMIT 1;
+
+                IF FOUND THEN
+                    -- Deactivate current account
+                    UPDATE field_accounts 
+                    SET is_active = FALSE 
+                    WHERE field_id = NEW.field_id AND account_id = NEW.account_id;
+                    
+                    -- Activate the queued account and unmark it as queued
+                    UPDATE field_accounts 
+                    SET is_active = TRUE, is_queued = FALSE 
+                    WHERE field_id = NEW.field_id AND account_id = queued_account_id;
+                END IF;
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        -- Safely drop trigger if exists to allow update
+        DROP TRIGGER IF EXISTS trigger_check_usage_limit ON field_accounts;
+        
+        CREATE TRIGGER trigger_check_usage_limit
+        AFTER UPDATE OF usage_for_field ON field_accounts
+        FOR EACH ROW
+        EXECUTE FUNCTION check_usage_limit();
     `;
     try {
         await dbClient.query(schemaQuery);
@@ -202,9 +254,9 @@ exports.handler = async (event) => {
             
         // --- Water Bank Route ---
         } else if (resource === "/water-bank" && httpMethod === "GET") {
-             // Basic fetch for water bank table
-             const result = await client.query("SELECT * FROM water_bank");
-             // Helper to map snake to camel if needed, but simple return for now
+             // Query the VIEW we created
+             const result = await client.query("SELECT * FROM water_bank_view");
+             // Helper to map snake to camel for frontend
              const mapped = result.rows.map(row => ({
                  id: row.id,
                  ownerName: row.owner_name,
