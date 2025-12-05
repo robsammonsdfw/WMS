@@ -41,7 +41,7 @@ async function getDbClient() {
             total_water_allocation NUMERIC,
             water_used NUMERIC,
             owner VARCHAR(255),
-            lateral VARCHAR(50),
+            "lateral" VARCHAR(50),
             tap_number VARCHAR(50)
         );
 
@@ -54,7 +54,7 @@ async function getDbClient() {
             order_date TIMESTAMP,
             requested_amount NUMERIC,
             ditch_rider_id INT,
-            lateral VARCHAR(50),
+            "lateral" VARCHAR(50),
             serial_number VARCHAR(100),
             delivery_start_date DATE,
             tap_number VARCHAR(50)
@@ -80,7 +80,7 @@ async function getDbClient() {
         CREATE TABLE IF NOT EXISTS water_bank (
             id SERIAL PRIMARY KEY,
             account_id INT REFERENCES accounts(id),
-            lateral VARCHAR(50),
+            "lateral" VARCHAR(50),
             amount_available NUMERIC(10, 2),
             source VARCHAR(100),
             field_association VARCHAR(255),
@@ -91,7 +91,7 @@ async function getDbClient() {
         SELECT 
             wb.id,
             a.owner_name,
-            wb.lateral,
+            wb."lateral",
             wb.amount_available,
             wb.source,
             wb.field_association
@@ -213,7 +213,7 @@ exports.handler = async (event) => {
             const now = new Date().toISOString();
             
             await client.query(
-                `INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, lateral, delivery_start_date, tap_number) 
+                `INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, "lateral", delivery_start_date, tap_number) 
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
                 [id, data.fieldId, data.fieldName, data.requester, data.status, now, data.requestedAmount, data.lateral, data.deliveryStartDate, data.tapNumber]
             );
