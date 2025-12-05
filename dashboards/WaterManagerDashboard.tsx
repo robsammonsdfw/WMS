@@ -237,6 +237,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                 const allocation = field.totalWaterAllocation || 0;
                                 const used = field.waterUsed || 0;
                                 const isRunning = waterOrders.some(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
+                                const pendingOrder = waterOrders.find(o => o.fieldId === field.id && (o.status === WaterOrderStatus.Pending || o.status === WaterOrderStatus.Approved));
                                 
                                 return (
                                 <tr 
@@ -252,9 +253,16 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.acres}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{`${used} / ${allocation}`}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRunning ? 'bg-blue-200 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
-                                            {isRunning ? 'Running' : 'Idle'}
-                                        </span>
+                                        <div className="flex flex-col items-start gap-1">
+                                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRunning ? 'bg-blue-200 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
+                                                {isRunning ? 'Running' : 'Idle'}
+                                            </span>
+                                            {pendingOrder && (
+                                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRunning ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+                                                    Pending: {pendingOrder.deliveryStartDate || 'Asap'}
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <button

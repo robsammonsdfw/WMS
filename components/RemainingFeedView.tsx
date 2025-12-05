@@ -12,22 +12,58 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {fields.map(field => {
-        // Determine Status
-        const isRunning = waterOrders.some(
+        // 1. Determine Current Status (Is Water ON?)
+        const activeOrder = waterOrders.find(
           o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress
+        );
+        const isRunning = !!activeOrder;
+
+        // 2. Determine Pending Status (Is something waiting?)
+        const pendingOrder = waterOrders.find(
+            o => o.fieldId === field.id && 
+            (o.status === WaterOrderStatus.Pending || o.status === WaterOrderStatus.Approved)
         );
 
         // Calculate Totals with Safety Checks
-        // Defaults to 0 if the API returns null/undefined to prevent app crash
         const allocation = typeof field.totalWaterAllocation === 'number' ? field.totalWaterAllocation : 0;
         const used = typeof field.waterUsed === 'number' ? field.waterUsed : 0;
         
         const remaining = allocation - used;
         const percentUsed = allocation > 0 ? (used / allocation) * 100 : 0;
 
-        // Visual Configuration
-        const cardColor = isRunning ? 'bg-blue-600' : 'bg-red-600';
-        const statusText = isRunning ? 'WATER RUNNING' : 'WATER OFF';
+        // --- Visual Configuration Logic ---
+        let cardColor = 'bg-red-600'; // Default: Off (Red)
+        let statusBadgeClass = 'bg-black bg-opacity-20 text-white'; // Default badge style
+        let statusText = 'WATER OFF';
+
+        if (isRunning) {
+            // CASE: Water is currently ON
+            cardColor = 'bg-blue-600';
+            
+            if (pendingOrder) {
+                // CASE: Water ON, but Pending Order exists (Pending Turn Off/Switch)
+                // User Req: "when its blue and on the pending order should show 'Pending' and be in red"
+                statusBadgeClass = 'bg-red-600 text-white border border-red-400';
+                statusText = `PENDING: ${pendingOrder.deliveryStartDate || 'Asap'} (${pendingOrder.requestedAmount} AF)`;
+            } else {
+                // CASE: Water ON, No Pending
+                statusText = 'WATER RUNNING';
+            }
+
+        } else {
+            // CASE: Water is currently OFF
+            if (pendingOrder) {
+                // CASE: Water OFF, but Pending Order exists (Pending Turn On)
+                // User Req: "the field should show pending and be in blue to show its coming on"
+                cardColor = 'bg-blue-500'; // Slightly lighter blue to distinguish from active running, or keep same
+                statusBadgeClass = 'bg-black bg-opacity-20 text-white';
+                statusText = `PENDING START: ${pendingOrder.deliveryStartDate || 'Asap'} (${pendingOrder.requestedAmount} AF)`;
+            } else {
+                // CASE: Water OFF, No Pending
+                cardColor = 'bg-red-600';
+                statusText = 'WATER OFF';
+            }
+        }
 
         return (
           <div 
@@ -41,7 +77,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
                 {field.name}
               </h3>
               <p className="text-blue-100 text-sm font-semibold opacity-90">{field.crop} • {field.acres} Acres</p>
-              <div className="mt-2 inline-block px-3 py-1 rounded-full bg-black bg-opacity-20 text-white text-xs font-bold tracking-wider uppercase">
+              <div className={`mt-2 inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase ${statusBadgeClass}`}>
                 {statusText}
               </div>
             </div>
