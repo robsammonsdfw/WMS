@@ -31,7 +31,21 @@ export interface Account {
   id: number;
   accountNumber: string;
   ownerName?: string;
-  headgateId?: number; // Optional link to a specific headgate
+  headgateId?: number; 
+  // Fields specific to the Field-Account relationship
+  allocationForField?: number;
+  usageForField?: number;
+  isActive?: boolean; // Is this the currently billing account?
+  isQueued?: boolean; // Is this the next account in line?
+}
+
+export interface WaterBankEntry {
+  id: number;
+  ownerName: string;
+  lateral: string;
+  amountAvailable: number;
+  source: string;
+  fieldAssociation?: string; // Optional name of a field this entry might be tied to
 }
 
 export interface Field {
@@ -42,13 +56,16 @@ export interface Field {
   location: string;
   totalWaterAllocation: number;
   waterUsed: number;
-  owner?: string; // Kept for backward compat, though Accounts might replace this
+  owner?: string; 
   
-  // New Relational Data
+  // Relational Data
   headgates: Headgate[]; 
-  accounts: Account[];
+  accounts: Account[]; // List of all accounts linked to this field
   
-  // Deprecated (kept optional for potential legacy API responses)
+  // Computed helpers (optional, but useful for UI)
+  activeAccountId?: number;
+  
+  // Deprecated
   lateral?: string; 
   tapNumber?: string;
 }

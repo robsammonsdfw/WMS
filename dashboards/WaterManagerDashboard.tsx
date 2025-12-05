@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Field, WaterOrder, WaterOrderStatus } from '../types';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
@@ -10,6 +10,7 @@ import QRCodeModal from '../components/QRCodeModal';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
 import Scanner from '../components/Scanner';
 import RemainingFeedView from '../components/RemainingFeedView';
+import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
 import { createWaterOrder, updateWaterOrder } from '../services/api';
 
 interface WaterManagerDashboardProps {
@@ -23,8 +24,37 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [viewMode, setViewMode] = useState<'standard' | 'feed'>('standard');
   const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
   const [selectedFieldDetails, setSelectedFieldDetails] = useState<Field | null>(null);
+  const [alertField, setAlertField] = useState<Field | null>(null);
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  // Check for alerts on fields whenever 'fields' data updates
+  useEffect(() => {
+    const checkForAlerts = () => {
+        // Find the first field that meets the 75% criteria AND has active accounts to manage
+        const fieldWithAlert = fields.find(f => {
+            // Check usage against total allocation if accounts aren't detailed, 
+            // OR check specific active account usage if available
+            const activeAccount = f.accounts?.find(a => a.isActive);
+            if (activeAccount && activeAccount.allocationForField && activeAccount.usageForField) {
+                 const percent = (activeAccount.usageForField / activeAccount.allocationForField);
+                 // Trigger if >= 75% and < 100% (assuming at 100% it might have already auto-switched or needs a different alert)
+                 // Also ensure we haven't already queued someone (f.accounts.some(a => a.isQueued))? 
+                 // The prompt implies we want to replace/queue when we get this alert.
+                 return percent >= 0.75 && percent < 1.0 && !f.accounts.some(a => a.isQueued);
+            }
+            return false; 
+        });
+
+        if (fieldWithAlert) {
+            setAlertField(fieldWithAlert);
+        }
+    };
+    
+    // Small timeout to allow UI to settle before popping modal
+    const timer = setTimeout(checkForAlerts, 1000);
+    return () => clearTimeout(timer);
+  }, [fields]);
 
   const totalWaterUsed = fields.reduce((sum, field) => sum + (field.waterUsed || 0), 0);
   const totalAllocation = fields.reduce((sum, field) => sum + (field.totalWaterAllocation || 0), 0);
@@ -40,7 +70,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         return;
     }
 
-    // Default to the first headgate/lateral if available, otherwise use legacy or empty
     const primaryHeadgate = field.headgates && field.headgates.length > 0 ? field.headgates[0] : null;
     const lateral = primaryHeadgate ? primaryHeadgate.lateral : (field.lateral || 'Unassigned');
     const tapNumber = primaryHeadgate ? primaryHeadgate.tapNumber : (field.tapNumber || '');
@@ -62,7 +91,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         setIsNewOrderModalOpen(false);
         alert(`New water order for ${field.name} has been created and sent for approval.`);
     } catch (error: any) {
-        // Display the direct message without "Error: Error:" prefix
         alert(error.message || error);
     }
   };
@@ -107,7 +135,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
           <h2 className="text-2xl font-bold text-gray-800">Welcome, {user.name}</h2>
           
-          {/* Main Action Bar - Visible in both views */}
           <div className="flex flex-wrap gap-2 w-full xl:w-auto">
             <button 
                 onClick={() => setIsNewOrderModalOpen(true)}
@@ -200,7 +227,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                             {fields.map(field => {
                                 const allocation = field.totalWaterAllocation || 0;
                                 const used = field.waterUsed || 0;
-                                const usagePercent = allocation > 0 ? (used / allocation) * 100 : 0;
                                 const isRunning = waterOrders.some(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
                                 
                                 return (
@@ -241,6 +267,15 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
             <WaterOrderList orders={myRecentOrders} title="All Recent Water Orders" />
         </>
+      )}
+
+      {/* MODALS */}
+      {alertField && (
+          <WaterUsageAlertModal
+            field={alertField}
+            onClose={() => setAlertField(null)}
+            onUpdate={refreshWaterOrders} // In reality this might need a full fields refresh, using refreshWaterOrders as proxy for global refresh callback logic
+          />
       )}
 
       {selectedFieldForQR && (
