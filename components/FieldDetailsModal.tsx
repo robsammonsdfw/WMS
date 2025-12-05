@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Field, WaterOrder, WaterOrderStatus } from '../types';
-import { XCircleIcon } from './icons';
+import { XCircleIcon, UserGroupIcon } from './icons';
 
 interface FieldDetailsModalProps {
   field: Field;
@@ -20,6 +20,11 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
   const history = orders
     .filter(o => o.fieldId === field.id)
     .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
+
+  // Determine primary lateral from headgates or fallback
+  const headgates = field.headgates && field.headgates.length > 0 ? field.headgates : [];
+  // For display purposes, if there are accounts, we list them. 
+  const accounts = field.accounts && field.accounts.length > 0 ? field.accounts : [];
 
   return (
      <div 
@@ -49,20 +54,61 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                </div>
             </div>
 
+            {/* 3. Account Numbers (NEW) */}
+            <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+                <div className="flex items-center space-x-2 mb-2">
+                    <UserGroupIcon className="h-4 w-4 text-indigo-500" />
+                    <h3 className="text-xs font-bold text-indigo-500 uppercase tracking-wide">Account Numbers</h3>
+                </div>
+                {accounts.length > 0 ? (
+                    <ul className="space-y-2">
+                        {accounts.map(acc => {
+                             // Find associated headgate if it exists
+                             const linkedHeadgate = headgates.find(hg => hg.id === acc.headgateId);
+                             return (
+                                <li key={acc.id} className="bg-white p-2 rounded shadow-sm border border-indigo-100 flex justify-between items-center">
+                                    <span className="font-mono font-bold text-indigo-900">{acc.accountNumber}</span>
+                                    {linkedHeadgate && (
+                                        <span className="text-xs text-gray-500">
+                                            Lat {linkedHeadgate.lateral} / Tap {linkedHeadgate.tapNumber}
+                                        </span>
+                                    )}
+                                </li>
+                             );
+                        })}
+                    </ul>
+                ) : (
+                    <p className="text-sm text-gray-500 italic">No accounts assigned.</p>
+                )}
+            </div>
+
+
             <div className="grid grid-cols-2 gap-4">
-                {/* 3. Headgate Info */}
+                {/* 4. Headgate Info */}
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Headgate Info</h3>
-                    <div className="space-y-1">
-                        <p className="text-gray-700 text-sm">Lateral</p>
-                        <p className="text-gray-900 font-bold text-xl">{field.lateral}</p>
-                        <div className="h-2"></div>
-                        <p className="text-gray-700 text-sm">Tap Number</p>
-                        <p className="text-gray-900 font-bold text-xl">{field.tapNumber}</p>
-                    </div>
+                    {headgates.length > 0 ? (
+                        <div className="space-y-3">
+                            {headgates.map((hg, idx) => (
+                                <div key={hg.id || idx} className="border-b border-gray-200 last:border-0 pb-2 last:pb-0">
+                                    <p className="text-gray-700 text-xs uppercase">Lateral <strong className="text-gray-900 text-lg">{hg.lateral}</strong></p>
+                                    <p className="text-gray-700 text-xs">Tap # <strong className="text-gray-900">{hg.tapNumber}</strong></p>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                         <div className="space-y-1">
+                             {/* Fallback for legacy data */}
+                            <p className="text-gray-700 text-sm">Lateral</p>
+                            <p className="text-gray-900 font-bold text-xl">{field.lateral || 'N/A'}</p>
+                            <div className="h-2"></div>
+                            <p className="text-gray-700 text-sm">Tap Number</p>
+                            <p className="text-gray-900 font-bold text-xl">{field.tapNumber || 'N/A'}</p>
+                        </div>
+                    )}
                 </div>
 
-                {/* 4. Crop / Acres */}
+                {/* 5. Crop / Acres */}
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Crop / Acres</h3>
                     <div className="space-y-1">
@@ -75,13 +121,13 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                 </div>
             </div>
 
-            {/* 5. Location */}
+            {/* 6. Location */}
              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Location</h3>
                 <p className="text-gray-800 font-medium text-lg leading-snug">{field.location || "Location not specified"}</p>
             </div>
 
-            {/* 6. History / Stats */}
+            {/* 7. History / Stats */}
             <div>
                 <h3 className="text-xl font-bold text-gray-900 mb-3 border-t pt-4">History / Stats</h3>
                 

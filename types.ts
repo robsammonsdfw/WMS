@@ -21,6 +21,19 @@ export enum WaterOrderStatus {
   AwaitingApproval = 'Awaiting Approval',
 }
 
+export interface Headgate {
+  id: number;
+  lateral: string;
+  tapNumber: string;
+}
+
+export interface Account {
+  id: number;
+  accountNumber: string;
+  ownerName?: string;
+  headgateId?: number; // Optional link to a specific headgate
+}
+
 export interface Field {
   id: string;
   name: string;
@@ -29,9 +42,15 @@ export interface Field {
   location: string;
   totalWaterAllocation: number;
   waterUsed: number;
-  owner?: string;
-  lateral: string;
-  tapNumber: string;
+  owner?: string; // Kept for backward compat, though Accounts might replace this
+  
+  // New Relational Data
+  headgates: Headgate[]; 
+  accounts: Account[];
+  
+  // Deprecated (kept optional for potential legacy API responses)
+  lateral?: string; 
+  tapNumber?: string;
 }
 
 export interface WaterOrder {

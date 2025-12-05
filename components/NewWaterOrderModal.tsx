@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Field } from '../types';
 import { XCircleIcon, DocumentAddIcon } from './icons';
@@ -16,6 +17,16 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
 
   const selectedField = useMemo(() => fields.find(f => f.id === fieldId), [fieldId, fields]);
   const today = new Date().toISOString().split('T')[0];
+
+  // Derive primary headgate info
+  const headgateInfo = useMemo(() => {
+    if (!selectedField) return null;
+    if (selectedField.headgates && selectedField.headgates.length > 0) {
+        return selectedField.headgates[0];
+    }
+    // Fallback
+    return { lateral: selectedField.lateral, tapNumber: selectedField.tapNumber };
+  }, [selectedField]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,16 +92,22 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
                 >
                     <option value="" disabled>Select a field...</option>
                     {fields.map(field => (
-                        <option key={field.id} value={field.id}>{field.name} ({field.owner})</option>
+                        <option key={field.id} value={field.id}>{field.name} ({field.owner || 'No Owner'})</option>
                     ))}
                 </select>
             </div>
             
-            {selectedField && (
+            {selectedField && headgateInfo && (
                 <div className="p-3 bg-gray-50 rounded-md border border-gray-200 text-sm grid grid-cols-2 gap-2">
-                    <p><span className="font-medium text-gray-600">Lateral:</span> {selectedField.lateral}</p>
-                    <p><span className="font-medium text-gray-600">Tap Number:</span> {selectedField.tapNumber}</p>
+                    <p><span className="font-medium text-gray-600">Lateral:</span> {headgateInfo.lateral || 'N/A'}</p>
+                    <p><span className="font-medium text-gray-600">Tap Number:</span> {headgateInfo.tapNumber || 'N/A'}</p>
                     <p><span className="font-medium text-gray-600">Acres:</span> {selectedField.acres}</p>
+                    {/* Add note if multiple headgates exist */}
+                    {selectedField.headgates && selectedField.headgates.length > 1 && (
+                         <p className="col-span-2 text-xs text-blue-600 italic">
+                             *Field has {selectedField.headgates.length} headgates available. Order defaults to primary.
+                         </p>
+                    )}
                 </div>
             )}
 

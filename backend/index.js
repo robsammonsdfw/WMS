@@ -71,29 +71,23 @@ exports.handler = async (event) => {
     if (event.requestContext && event.requestContext.http) {
         // HTTP API (v2) standard payload
         httpMethod = event.requestContext.http.method;
-        // Normalize path to ignore stage if present (e.g. /v1/orders -> /orders)
-        // This is a simple heuristic; strictly matching routeKey is also valid.
         const rawPath = event.requestContext.http.path; 
         resource = rawPath.replace(/^\/v1/, ''); 
     } else if (event.routeKey) {
-        // Fallback for routeKey
         const [method, path] = event.routeKey.split(' ');
         httpMethod = method;
         resource = path;
     } else {
-        // Legacy REST API
         resource = event.resource;
         httpMethod = event.httpMethod;
     }
 
     console.log(`Processing: ${httpMethod} ${resource}`);
 
-    let response = { headers }; // Init response with CORS headers
+    let response = { headers }; 
 
     try {
-        // --- PREFLIGHT / OPTIONS CHECK ---
         if (httpMethod === 'OPTIONS') {
-            // Immediately return 200 for CORS preflight checks
             response.statusCode = 200;
             response.body = '';
             return response;
@@ -127,8 +121,6 @@ exports.handler = async (event) => {
             }
 
         } else if (resource.match(/^\/orders\/[^/]+$/) && httpMethod === "PUT") {
-            // Regex match for /orders/{id} since HTTP API v2 path doesn't always populate pathParameters the same way as routeKey
-            // Use pathParameters if available, otherwise extract from path
             let id = pathParameters.id;
             if (!id) {
                 const parts = resource.split('/');
@@ -143,7 +135,24 @@ exports.handler = async (event) => {
         
         // --- Fields Routes ---
         } else if (resource === "/fields" && httpMethod === "GET") {
-            const result = await client.query("SELECT * FROM fields ORDER BY name ASC");
+            // Updated Query to fetch nested Headgates and Accounts
+            const query = `
+                SELECT 
+                    f.*,
+                    (
+                        SELECT COALESCE(json_agg(h), '[]'::json)
+                        FROM headgates h
+                        WHERE h.field_id = f.id
+                    ) AS headgates,
+                    (
+                        SELECT COALESCE(json_agg(a), '[]'::json)
+                        FROM accounts a
+                        WHERE a.field_id = f.id
+                    ) AS accounts
+                FROM fields f
+                ORDER BY f.name ASC;
+            `;
+            const result = await client.query(query);
             response.statusCode = 200;
             response.body = JSON.stringify(result.rows);
         

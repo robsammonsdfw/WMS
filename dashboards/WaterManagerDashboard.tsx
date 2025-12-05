@@ -40,6 +40,11 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         return;
     }
 
+    // Default to the first headgate/lateral if available, otherwise use legacy or empty
+    const primaryHeadgate = field.headgates && field.headgates.length > 0 ? field.headgates[0] : null;
+    const lateral = primaryHeadgate ? primaryHeadgate.lateral : (field.lateral || 'Unassigned');
+    const tapNumber = primaryHeadgate ? primaryHeadgate.tapNumber : (field.tapNumber || '');
+
     const newOrderData = {
         fieldId: field.id,
         fieldName: field.name,
@@ -47,8 +52,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         status: WaterOrderStatus.Pending,
         deliveryStartDate: formData.deliveryStartDate,
         requestedAmount: formData.requestedAmount,
-        lateral: field.lateral,
-        tapNumber: field.tapNumber,
+        lateral: lateral,
+        tapNumber: tapNumber,
     };
 
     try {
