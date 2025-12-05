@@ -24,7 +24,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
             (o.status === WaterOrderStatus.Pending || o.status === WaterOrderStatus.Approved)
         );
 
-        // Calculate Totals with Safety Checks
+        // Calculate Totals
         const allocation = typeof field.totalWaterAllocation === 'number' ? field.totalWaterAllocation : 0;
         const used = typeof field.waterUsed === 'number' ? field.waterUsed : 0;
         
@@ -32,36 +32,47 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
         const percentUsed = allocation > 0 ? (used / allocation) * 100 : 0;
 
         // --- Visual Configuration Logic ---
-        let cardColor = 'bg-red-600'; // Default: Off (Red)
-        let statusBadgeClass = 'bg-black bg-opacity-20 text-white'; // Default badge style
-        let statusText = 'WATER OFF';
+        let cardColor = 'bg-red-600'; 
+        let statusBadge = null;
+        let pendingBadge = null;
 
         if (isRunning) {
             // CASE: Water is currently ON
             cardColor = 'bg-blue-600';
             
+            statusBadge = (
+                <div className="inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-blue-800 text-white border border-blue-400 shadow-sm">
+                    WATER RUNNING
+                </div>
+            );
+
             if (pendingOrder) {
                 // CASE: Water ON, but Pending Order exists (Pending Turn Off/Switch)
-                // User Req: "when its blue and on the pending order should show 'Pending' and be in red"
-                statusBadgeClass = 'bg-red-600 text-white border border-red-400';
-                statusText = `PENDING: ${pendingOrder.deliveryStartDate || 'Asap'} (${pendingOrder.requestedAmount} AF)`;
-            } else {
-                // CASE: Water ON, No Pending
-                statusText = 'WATER RUNNING';
+                pendingBadge = (
+                     <div className="mt-1 inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-100 text-red-800 border border-red-300 shadow-sm">
+                        PENDING: {pendingOrder.deliveryStartDate || 'Asap'}
+                    </div>
+                );
             }
 
         } else {
             // CASE: Water is currently OFF
+            cardColor = 'bg-red-600'; // User Requirement: Stays Red if Off
+
+            statusBadge = (
+                <div className="inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-900 text-red-100 border border-red-800 shadow-sm">
+                    WATER OFF
+                </div>
+            );
+            
             if (pendingOrder) {
                 // CASE: Water OFF, but Pending Order exists (Pending Turn On)
-                // User Req: "the field should show pending and be in blue to show its coming on"
-                cardColor = 'bg-blue-500'; // Slightly lighter blue to distinguish from active running, or keep same
-                statusBadgeClass = 'bg-black bg-opacity-20 text-white';
-                statusText = `PENDING START: ${pendingOrder.deliveryStartDate || 'Asap'} (${pendingOrder.requestedAmount} AF)`;
-            } else {
-                // CASE: Water OFF, No Pending
-                cardColor = 'bg-red-600';
-                statusText = 'WATER OFF';
+                // User Requirement: "PENDING" badge is White/Blue for high visibility.
+                pendingBadge = (
+                     <div className="mt-1 inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-white text-blue-800 border-2 border-blue-600 shadow-md animate-pulse">
+                        PENDING START: {pendingOrder.deliveryStartDate || 'Asap'}
+                    </div>
+                );
             }
         }
 
@@ -77,12 +88,14 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
                 {field.name}
               </h3>
               <p className="text-blue-100 text-sm font-semibold opacity-90">{field.crop} • {field.acres} Acres</p>
-              <div className={`mt-2 inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase ${statusBadgeClass}`}>
-                {statusText}
+              
+              <div className="mt-2 flex flex-col items-center justify-center space-y-1 min-h-[50px]">
+                 {statusBadge}
+                 {pendingBadge}
               </div>
             </div>
 
-            {/* Totals Section - The "Box with the totals" */}
+            {/* Totals Section */}
             <div className="flex-1 bg-white mx-4 mb-4 rounded-lg p-4 flex flex-col justify-center shadow-inner">
               <div className="grid grid-cols-2 gap-4 text-center mb-3">
                 <div className="flex flex-col">
