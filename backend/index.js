@@ -35,143 +35,109 @@ async function getDbClient() {
     try {
         await dbClient.connect();
         console.log("Database connected successfully.");
-    } catch (err) {
-        console.error("Error connecting to database:", err);
-        throw err;
-    }
-    
-    // --- SCHEMA INITIALIZATION & MIGRATION ---
-    const schemaQuery = `
-        CREATE TABLE IF NOT EXISTS fields (
-            id VARCHAR(255) PRIMARY KEY,
-            name VARCHAR(255),
-            crop VARCHAR(255),
-            acres NUMERIC,
-            location VARCHAR(255),
-            total_water_allocation NUMERIC,
-            water_used NUMERIC,
-            owner VARCHAR(255),
-            "lateral" VARCHAR(50),
-            tap_number VARCHAR(50)
-        );
-
-        CREATE TABLE IF NOT EXISTS water_orders (
-            id VARCHAR(255) PRIMARY KEY,
-            field_id VARCHAR(255),
-            field_name VARCHAR(255),
-            requester VARCHAR(255),
-            status VARCHAR(50),
-            order_date TIMESTAMP,
-            requested_amount NUMERIC,
-            ditch_rider_id INT,
-            "lateral" VARCHAR(50),
-            serial_number VARCHAR(100),
-            delivery_start_date DATE,
-            tap_number VARCHAR(50)
-        );
-
-        CREATE TABLE IF NOT EXISTS accounts (
-            id SERIAL PRIMARY KEY,
-            account_number VARCHAR(255) UNIQUE NOT NULL,
-            owner_name VARCHAR(255),
-            total_allocation NUMERIC(10, 2) DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS field_accounts (
-            field_id VARCHAR(255), 
-            account_id INT REFERENCES accounts(id),
-            allocation_for_field NUMERIC(10, 2) DEFAULT 0,
-            usage_for_field NUMERIC(10, 2) DEFAULT 0,
-            is_active BOOLEAN DEFAULT FALSE,
-            is_queued BOOLEAN DEFAULT FALSE,
-            PRIMARY KEY (field_id, account_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS water_bank (
-            id SERIAL PRIMARY KEY,
-            account_id INT REFERENCES accounts(id),
-            "lateral" VARCHAR(50),
-            amount_available NUMERIC(10, 2),
-            source VARCHAR(100),
-            field_association VARCHAR(255),
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-
-        CREATE OR REPLACE VIEW water_bank_view AS
-        SELECT 
-            wb.id,
-            a.owner_name,
-            wb."lateral",
-            wb.amount_available,
-            wb.source,
-            wb.field_association
-        FROM water_bank wb
-        LEFT JOIN accounts a ON wb.account_id = a.id;
-
-        -- Trigger Logic for Auto-Switching
-        CREATE OR REPLACE FUNCTION check_usage_limit() RETURNS TRIGGER AS $$
-        DECLARE
-            queued_account_id INT;
-        BEGIN
-            IF NEW.usage_for_field >= NEW.allocation_for_field AND NEW.is_active = TRUE THEN
-                SELECT account_id INTO queued_account_id
-                FROM field_accounts
-                WHERE field_id = NEW.field_id AND is_queued = TRUE
-                LIMIT 1;
-
-                IF FOUND THEN
-                    UPDATE field_accounts SET is_active = FALSE WHERE field_id = NEW.field_id AND account_id = NEW.account_id;
-                    UPDATE field_accounts SET is_active = TRUE, is_queued = FALSE WHERE field_id = NEW.field_id AND account_id = queued_account_id;
-                END IF;
-            END IF;
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql;
-
-        DROP TRIGGER IF EXISTS trigger_check_usage_limit ON field_accounts;
-        CREATE TRIGGER trigger_check_usage_limit
-        AFTER UPDATE OF usage_for_field ON field_accounts
-        FOR EACH ROW
-        EXECUTE FUNCTION check_usage_limit();
-    `;
-
-    try {
-        console.log("Running schema check...");
-        await dbClient.query(schemaQuery);
-        console.log("Schema check complete.");
         
-        // --- DATA MIGRATION CHECK ---
-        // If accounts table is empty but fields exist, create default accounts for existing fields
-        const checkAccounts = await dbClient.query("SELECT COUNT(*) FROM accounts");
-        if (parseInt(checkAccounts.rows[0].count) === 0) {
-             console.log("Migrating legacy fields to accounts...");
-             const existingFields = await dbClient.query("SELECT * FROM fields");
-             for (const field of existingFields.rows) {
-                 if (field.owner) {
-                     // Create/Get Account
-                     const accRes = await dbClient.query(
-                         `INSERT INTO accounts (account_number, owner_name, total_allocation) 
-                          VALUES ($1, $2, $3) 
-                          ON CONFLICT (account_number) DO UPDATE SET total_allocation = accounts.total_allocation
-                          RETURNING id`,
-                         [`ACC-${field.id}`, field.owner, 1000] // Dummy account number and default global alloc
-                     );
-                     const accId = accRes.rows[0].id;
-                     
-                     // Link Field to Account
-                     await dbClient.query(
-                         `INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
-                          VALUES ($1, $2, $3, $4, TRUE)
-                          ON CONFLICT DO NOTHING`,
-                          [field.id, accId, field.total_water_allocation, field.water_used]
-                     );
-                 }
-             }
-             console.log("Migration complete.");
-        }
+        // --- SCHEMA INITIALIZATION (Auto-Healing) ---
+        // We use ALTER TABLE ... IF NOT EXISTS to ensure columns are added even if table exists.
+        await dbClient.query(`
+            CREATE TABLE IF NOT EXISTS fields (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255),
+                crop VARCHAR(255),
+                acres NUMERIC,
+                location VARCHAR(255),
+                total_water_allocation NUMERIC,
+                water_used NUMERIC,
+                owner VARCHAR(255),
+                "lateral" VARCHAR(50),
+                tap_number VARCHAR(50)
+            );
 
-    } catch (e) {
-        console.error("Schema init/migration failed:", e);
+            CREATE TABLE IF NOT EXISTS water_orders (
+                id VARCHAR(255) PRIMARY KEY,
+                field_id VARCHAR(255),
+                field_name VARCHAR(255),
+                requester VARCHAR(255),
+                status VARCHAR(50),
+                order_date TIMESTAMP,
+                requested_amount NUMERIC,
+                ditch_rider_id INT,
+                "lateral" VARCHAR(50),
+                serial_number VARCHAR(100),
+                delivery_start_date DATE,
+                tap_number VARCHAR(50)
+            );
+
+            CREATE TABLE IF NOT EXISTS accounts (
+                id SERIAL PRIMARY KEY,
+                account_number VARCHAR(255) UNIQUE NOT NULL,
+                owner_name VARCHAR(255),
+                total_allocation NUMERIC(10, 2) DEFAULT 0
+            );
+            -- Self-heal accounts table if it was created without total_allocation
+            ALTER TABLE accounts ADD COLUMN IF NOT EXISTS total_allocation NUMERIC(10, 2) DEFAULT 0;
+
+            CREATE TABLE IF NOT EXISTS field_accounts (
+                field_id VARCHAR(255), 
+                account_id INT REFERENCES accounts(id),
+                allocation_for_field NUMERIC(10, 2) DEFAULT 0,
+                usage_for_field NUMERIC(10, 2) DEFAULT 0,
+                is_active BOOLEAN DEFAULT FALSE,
+                is_queued BOOLEAN DEFAULT FALSE,
+                PRIMARY KEY (field_id, account_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS water_bank (
+                id SERIAL PRIMARY KEY,
+                account_id INT REFERENCES accounts(id),
+                "lateral" VARCHAR(50),
+                amount_available NUMERIC(10, 2),
+                source VARCHAR(100),
+                field_association VARCHAR(255),
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE OR REPLACE VIEW water_bank_view AS
+            SELECT 
+                wb.id,
+                a.owner_name,
+                wb."lateral",
+                wb.amount_available,
+                wb.source,
+                wb.field_association
+            FROM water_bank wb
+            LEFT JOIN accounts a ON wb.account_id = a.id;
+
+            -- Trigger Logic for Auto-Switching
+            CREATE OR REPLACE FUNCTION check_usage_limit() RETURNS TRIGGER AS $$
+            DECLARE
+                queued_account_id INT;
+            BEGIN
+                IF NEW.usage_for_field >= NEW.allocation_for_field AND NEW.is_active = TRUE THEN
+                    SELECT account_id INTO queued_account_id
+                    FROM field_accounts
+                    WHERE field_id = NEW.field_id AND is_queued = TRUE
+                    LIMIT 1;
+
+                    IF FOUND THEN
+                        UPDATE field_accounts SET is_active = FALSE WHERE field_id = NEW.field_id AND account_id = NEW.account_id;
+                        UPDATE field_accounts SET is_active = TRUE, is_queued = FALSE WHERE field_id = NEW.field_id AND account_id = queued_account_id;
+                    END IF;
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS trigger_check_usage_limit ON field_accounts;
+            CREATE TRIGGER trigger_check_usage_limit
+            AFTER UPDATE OF usage_for_field ON field_accounts
+            FOR EACH ROW
+            EXECUTE FUNCTION check_usage_limit();
+        `);
+        console.log("Schema check complete.");
+
+    } catch (err) {
+        console.error("Error connecting or initializing schema:", err);
+        throw err;
     }
 
     return dbClient;
@@ -227,11 +193,87 @@ exports.handler = async (event) => {
     };
 
     try {
+        // --- ADMIN: RESET & SEED DB ---
+        if (path === '/admin/reset-db' && httpMethod === 'POST') {
+            console.log("RESETTING DATABASE...");
+            
+            // 1. Clear Data
+            await queryDb(`TRUNCATE water_orders, water_bank, field_accounts, accounts, fields CASCADE`);
+            
+            // 2. Insert Fields
+            await queryDb(`
+                INSERT INTO fields (id, name, crop, acres, location, total_water_allocation, water_used, owner, "lateral", tap_number) VALUES 
+                ('F001', 'North Field 1', 'Alfalfa', 120, '43.6150° N, 116.2023° W', 480.0, 150.0, 'Provost Farms', 'A', 'A-12'),
+                ('F002', 'South Field 2', 'Corn', 80, '43.6180° N, 116.2050° W', 320.0, 100.0, 'Provost Farms', 'A', 'A-14'),
+                ('F003', 'East Ridge', 'Sugar Beets', 150, '43.6200° N, 116.2100° W', 600.0, 450.0, 'Miller Land Co', 'B', 'B-05'),
+                ('F004', 'West Valley', 'Potatoes', 100, '43.6220° N, 116.2150° W', 400.0, 180.0, 'Miller Land Co', 'B', 'B-08')
+            `);
+            
+            // 3. Insert Accounts
+            await queryDb(`
+                INSERT INTO accounts (account_number, owner_name, total_allocation) VALUES 
+                ('ACC-PROV-01', 'Provost Farms', 1000.0),
+                ('ACC-PROV-02', 'Provost Farms (Secondary)', 500.0),
+                ('ACC-MILL-01', 'Miller Land Co', 1500.0)
+            `);
+            
+            // 4. Link Fields & Accounts
+            // Need to get Account IDs first or assume sequence if fresh truncate? 
+            // Better to use subqueries.
+            
+            // Link F001 to Provost-01
+            await queryDb(`
+                INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
+                SELECT 'F001', id, 480.0, 150.0, TRUE FROM accounts WHERE account_number = 'ACC-PROV-01'
+            `);
+             // Link F001 to Provost-02 (Backup)
+            await queryDb(`
+                INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
+                SELECT 'F001', id, 480.0, 0.0, FALSE FROM accounts WHERE account_number = 'ACC-PROV-02'
+            `);
+            
+            // Link F002 to Provost-01
+            await queryDb(`
+                INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
+                SELECT 'F002', id, 320.0, 100.0, TRUE FROM accounts WHERE account_number = 'ACC-PROV-01'
+            `);
+
+            // Link F003 to Miller-01 (75% USAGE ALERT SCENARIO)
+            await queryDb(`
+                INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
+                SELECT 'F003', id, 600.0, 450.0, TRUE FROM accounts WHERE account_number = 'ACC-MILL-01'
+            `);
+
+            // Link F004 to Miller-01
+            await queryDb(`
+                INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
+                SELECT 'F004', id, 400.0, 180.0, TRUE FROM accounts WHERE account_number = 'ACC-MILL-01'
+            `);
+            
+            // 5. Insert Water Bank
+            await queryDb(`
+                INSERT INTO water_bank (account_id, "lateral", amount_available, source, field_association)
+                SELECT id, 'B', 200.0, 'Saved Allocation', 'East Ridge' FROM accounts WHERE account_number = 'ACC-MILL-01'
+            `);
+            
+             // 6. Insert Sample Orders
+             const now = new Date();
+             const dayAgo = new Date(now.getTime() - 86400000).toISOString();
+             const tenDaysAgo = new Date(now.getTime() - 864000000).toISOString();
+             
+             await queryDb(`
+                INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, "lateral", delivery_start_date)
+                VALUES
+                ('ORD-101', 'F001', 'North Field 1', 'Mike Beus', 'Completed', '${tenDaysAgo}', 24.0, 'A', '${tenDaysAgo}'),
+                ('ORD-102', 'F003', 'East Ridge', 'Mike Beus', 'InProgress', '${dayAgo}', 36.0, 'B', '${dayAgo}')
+            `);
+
+            return { statusCode: 200, headers, body: JSON.stringify({ message: "Database Reset and Seeded Successfully" }) };
+        }
+
         // --- WATER ORDER ENDPOINTS ---
         if (path === '/orders' && httpMethod === 'GET') {
-            console.log("Fetching all orders");
             const res = await queryDb("SELECT * FROM water_orders ORDER BY order_date DESC");
-            // Map keys to camelCase for frontend
             const orders = res.rows.map(row => ({
                 id: row.id,
                 fieldId: row.field_id,
@@ -278,16 +320,12 @@ exports.handler = async (event) => {
             // TODO: If order completed, update water_used in fields table & field_accounts table
             if (data.status === 'Completed') {
                 console.log("Order completed. Updating usage stats.");
-                // 1. Get order details
                 const orderRes = await queryDb("SELECT field_id, requested_amount FROM water_orders WHERE id = $1", [orderId]);
                 if(orderRes.rows.length > 0) {
                     const { field_id, requested_amount } = orderRes.rows[0];
                     const amount = parseFloat(requested_amount);
                     
-                    // 2. Update Field Total
                     await queryDb("UPDATE fields SET water_used = COALESCE(water_used, 0) + $1 WHERE id = $2", [amount, field_id]);
-                    
-                    // 3. Update Active Account Usage (Triggers auto-switch via DB Trigger if limit reached)
                     await queryDb(`
                         UPDATE field_accounts 
                         SET usage_for_field = usage_for_field + $1 
@@ -301,10 +339,7 @@ exports.handler = async (event) => {
 
         // --- FIELDS ENDPOINTS ---
         if (path === '/fields' && httpMethod === 'GET') {
-            // Get Basic Fields
             const fieldsRes = await queryDb("SELECT * FROM fields ORDER BY name ASC");
-            
-            // For each field, fetch linked accounts
             const allAccountsRes = await queryDb(`
                 SELECT fa.*, a.account_number, a.owner_name 
                 FROM field_accounts fa 
@@ -344,14 +379,11 @@ exports.handler = async (event) => {
 
         // --- ACCOUNT QUEUE ENDPOINT ---
         if (path.match(/^\/fields\/[a-zA-Z0-9-]+\/accounts$/) && httpMethod === 'PUT') {
-            const fieldId = path.split('/')[2]; // /fields/:id/accounts
+            const fieldId = path.split('/')[2];
             console.log(`Updating account queue for field ${fieldId}. Body:`, body);
             const { nextAccountId } = JSON.parse(body);
 
-            // 1. Reset current queue for this field
             await queryDb("UPDATE field_accounts SET is_queued = FALSE WHERE field_id = $1", [fieldId]);
-            
-            // 2. Set new queued account
             await queryDb("UPDATE field_accounts SET is_queued = TRUE WHERE field_id = $1 AND account_id = $2", [fieldId, nextAccountId]);
 
             return { statusCode: 200, headers, body: JSON.stringify({ message: "Queue updated" }) };

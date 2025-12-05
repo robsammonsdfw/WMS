@@ -127,3 +127,8 @@ export const setFieldAccountQueue = (fieldId: string, nextAccountId: number): Pr
 export const getWaterBank = (): Promise<WaterBankEntry[]> => {
     return apiFetch('/water-bank').catch(() => []);
 };
+
+// --- Admin ---
+export const resetDatabase = (): Promise<any> => {
+    return apiFetch('/admin/reset-db', { method: 'POST' });
+};

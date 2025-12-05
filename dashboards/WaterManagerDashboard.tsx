@@ -5,13 +5,13 @@ import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
 import SeasonStatistics from '../components/SeasonStatistics';
 import FieldDetailsModal from '../components/FieldDetailsModal';
-import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, RefreshIcon, ChartBarIcon as ViewGridIcon, BellIcon } from '../components/icons';
+import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, RefreshIcon, ChartBarIcon as ViewGridIcon, BellIcon, TrashIcon } from '../components/icons';
 import QRCodeModal from '../components/QRCodeModal';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
 import Scanner from '../components/Scanner';
 import RemainingFeedView from '../components/RemainingFeedView';
 import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
-import { createWaterOrder, updateWaterOrder } from '../services/api';
+import { createWaterOrder, updateWaterOrder, resetDatabase } from '../services/api';
 
 interface WaterManagerDashboardProps {
   user: User;
@@ -122,6 +122,18 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         alert(`Error submitting order: ${error.message || error}`);
     }
   };
+  
+  const handleResetDb = async () => {
+      if(confirm("Are you sure you want to RESET the entire database? This will delete all data and reload seed data.")) {
+          try {
+              await resetDatabase();
+              alert("Database has been reset and seeded. The page will reload.");
+              window.location.reload();
+          } catch(e: any) {
+              alert("Failed to reset database: " + e.message);
+          }
+      }
+  };
 
   const riderRequestActions = (order: WaterOrder) => (
     <button
@@ -162,19 +174,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                     <span className="whitespace-nowrap">Scan Field Tag</span>
             </button>
 
-            {/* TEMP: Developer Test Button */}
+            {/* RESET DB Button */}
             <button 
-                onClick={() => {
-                    if(fields.length > 0) {
-                        setAlertField(fields[0]);
-                    } else {
-                        alert("No fields loaded to test.");
-                    }
-                }}
-                className="flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                onClick={handleResetDb}
+                className="flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-bold rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
             >
-                <BellIcon className="-ml-1 mr-2 h-5 w-5" />
-                <span className="whitespace-nowrap">Test Alert</span>
+                <TrashIcon className="-ml-1 mr-2 h-5 w-5" />
+                <span className="whitespace-nowrap">Reset Database</span>
             </button>
           </div>
       </div>
