@@ -49,6 +49,8 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     const url = `${cleanBase}${cleanEndpoint}`;
 
+    console.log(`[API Request] ${options.method || 'GET'} ${url}`);
+
     const apiKey = getApiKey();
     
     const headers: Record<string, string> = {
