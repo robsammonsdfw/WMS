@@ -45,9 +45,8 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
         return;
     }
 
-    // Convert Inches to Acre-Feet (AF)
-    // Formula: AF = (Inches / 12) * Acres
-    const amountAF = (inches / 12) * selectedField.acres;
+    // Convert Miner's Inches to Acre-Feet (AF) based on rule: 25 Inches = 1 AF
+    const amountAF = inches / 25;
 
     onOrderCreate({
       fieldId,
@@ -85,17 +84,25 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
         <form onSubmit={handleSubmit} className="space-y-4">
             <div>
                 <label htmlFor="field" className="block text-sm font-medium text-gray-700">Field</label>
-                <select
-                    id="field"
-                    value={fieldId}
-                    onChange={(e) => setFieldId(e.target.value)}
-                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                >
-                    <option value="" disabled>Select a field...</option>
-                    {fields.map(field => (
-                        <option key={field.id} value={field.id}>{field.name} ({field.owner || 'No Owner'})</option>
-                    ))}
-                </select>
+                {initialFieldId && selectedField ? (
+                    // Read-only view if field is pre-selected
+                    <div className="mt-1 block w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md shadow-sm sm:text-sm text-gray-800 font-medium">
+                        {selectedField.name} ({selectedField.owner || 'No Owner'})
+                    </div>
+                ) : (
+                    // Dropdown view if no field pre-selected
+                    <select
+                        id="field"
+                        value={fieldId}
+                        onChange={(e) => setFieldId(e.target.value)}
+                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                    >
+                        <option value="" disabled>Select a field...</option>
+                        {fields.map(field => (
+                            <option key={field.id} value={field.id}>{field.name} ({field.owner || 'No Owner'})</option>
+                        ))}
+                    </select>
+                )}
             </div>
             
             {selectedField && headgateInfo && (
@@ -123,11 +130,12 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
                         min="0.1"
                         step="0.1"
                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        placeholder="e.g., 2.5"
+                        placeholder="e.g., 25"
                     />
-                    {selectedField && inchesRequested && (
+                    {inchesRequested && (
                         <p className="text-xs text-gray-500 mt-1">
-                            ≈ {((parseFloat(inchesRequested) / 12) * selectedField.acres).toFixed(2)} AF
+                            {/* Conversion: 25 Inches = 1 AF */}
+                            ≈ {(parseFloat(inchesRequested) / 25).toFixed(2)} AF
                         </p>
                     )}
                 </div>
