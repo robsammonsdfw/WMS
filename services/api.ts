@@ -1,4 +1,5 @@
 
+
 import { WaterOrder, Field, WaterBankEntry } from '../types';
 
 // Declare global to access window.APP_CONFIG
@@ -82,8 +83,10 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
         return response.json();
     } catch (error: any) {
         console.error(`API call to ${url} failed:`, error);
+        
+        // This is the specific error browsers throw for CORS failures
         if (error instanceof TypeError && error.message === "Failed to fetch") {
-            throw new Error(`Connection failed (CORS).`);
+            throw new Error(`Connection failed (CORS). This usually means the API Gateway endpoint exists but has NOT been DEPLOYED yet. Please go to API Gateway -> Actions -> Deploy API.`);
         }
         throw error;
     }

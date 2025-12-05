@@ -146,15 +146,18 @@ async function getDbClient() {
 exports.handler = async (event) => {
     console.log("Lambda Handler Event:", JSON.stringify(event));
 
+    // Common Headers for CORS
+    const corsHeaders = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    };
+
     // Handling CORS preflight requests
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
-            headers: {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
-            },
+            headers: corsHeaders,
             body: JSON.stringify({ message: "CORS preflight check passed" })
         };
     }
@@ -173,8 +176,9 @@ exports.handler = async (event) => {
 
     const { httpMethod, path, body } = event;
 
+    // Merge CORS headers with content type
     const headers = {
-        "Access-Control-Allow-Origin": "*",
+        ...corsHeaders,
         "Content-Type": "application/json"
     };
 
@@ -218,8 +222,6 @@ exports.handler = async (event) => {
             `);
             
             // 4. Link Fields & Accounts
-            // Need to get Account IDs first or assume sequence if fresh truncate? 
-            // Better to use subqueries.
             
             // Link F001 to Provost-01
             await queryDb(`
@@ -317,7 +319,7 @@ exports.handler = async (event) => {
                 [data.status, orderId]
             );
 
-            // TODO: If order completed, update water_used in fields table & field_accounts table
+            // If order completed, update water_used in fields table & field_accounts table
             if (data.status === 'Completed') {
                 console.log("Order completed. Updating usage stats.");
                 const orderRes = await queryDb("SELECT field_id, requested_amount FROM water_orders WHERE id = $1", [orderId]);
