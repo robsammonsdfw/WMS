@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Field, WaterOrder, WaterOrderStatus } from '../types';
 import { XCircleIcon } from './icons';
@@ -9,27 +10,13 @@ interface FieldDetailsModalProps {
 }
 
 const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, onClose }) => {
-  // Constants
-  const ALLOTMENT_FACTOR = 2.65;
-  const ALLOWANCE_FACTOR = 3.75;
+  // Safe number access to prevent crashes if API returns null
+  const allocation = field.totalWaterAllocation || 0;
+  const used = field.waterUsed || 0;
+  const remaining = allocation - used;
 
-  // Calculations
-  const allotment = field.acres * ALLOTMENT_FACTOR;
-  const allowance = field.acres * ALLOWANCE_FACTOR;
-  const used = field.waterUsed;
-  
   const activeOrder = orders.find(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
   
-  let durationString = "Not running";
-  if (activeOrder && activeOrder.deliveryStartDate) {
-      const start = new Date(activeOrder.deliveryStartDate);
-      const now = new Date();
-      const diffMs = now.getTime() - start.getTime();
-      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      durationString = `${diffHrs}h ${diffMins}m`;
-  }
-
   const history = orders
     .filter(o => o.fieldId === field.id)
     .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
@@ -41,104 +28,105 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
         role="dialog"
         aria-modal="true"
      >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="p-6 relative">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-6 relative space-y-6">
             <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><XCircleIcon className="h-8 w-8"/></button>
-            <h2 className="text-2xl font-bold text-gray-800 mb-1">{field.name}</h2>
-            <p className="text-gray-500 mb-6">{field.acres} Acres • {field.crop}</p>
+            
+            {/* 1. Field Name */}
+            <h2 className="text-3xl font-extrabold text-gray-900 border-b pb-2 pr-8">{field.name}</h2>
 
-            {/* Status Section */}
-            <div className={`p-4 rounded-lg mb-6 ${activeOrder ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-gray-200'}`}>
-                <div className="flex items-center space-x-3 mb-2">
-                    <div className={`h-3 w-3 rounded-full ${activeOrder ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'}`}></div>
-                    <span className="font-semibold text-lg">{activeOrder ? 'Water Running' : 'Idle'}</span>
-                </div>
-                {activeOrder ? (
-                    <div className="grid grid-cols-2 gap-4 text-sm mt-3">
-                        <div>
-                            <p className="text-gray-500">Started At</p>
-                            <p className="font-medium">{new Date(activeOrder.deliveryStartDate!).toLocaleString()}</p>
-                        </div>
-                        <div>
-                            <p className="text-gray-500">Running Duration</p>
-                            <p className="font-medium">{durationString}</p>
-                        </div>
-                         <div>
-                            <p className="text-gray-500">Requested</p>
-                            <p className="font-medium">{activeOrder.requestedAmount.toFixed(2)} AF</p>
-                        </div>
-                         <div>
-                            <p className="text-gray-500">Order ID</p>
-                            <p className="font-medium">{activeOrder.id}</p>
-                        </div>
-                    </div>
-                ) : (
-                    <p className="text-sm text-gray-500">This field is currently not receiving water.</p>
-                )}
+            {/* 2. Balance of Water */}
+            <div className="bg-blue-50 p-5 rounded-xl border border-blue-200 shadow-sm">
+               <h3 className="text-sm font-bold text-blue-800 uppercase tracking-wide mb-1">Balance of Water</h3>
+               <div className="flex items-baseline space-x-2">
+                  <span className={`text-5xl font-black ${remaining < 0 ? 'text-red-600' : 'text-blue-700'}`}>
+                    {remaining.toFixed(1)} <span className="text-xl font-bold text-blue-600">AF</span>
+                  </span>
+               </div>
+               <div className="mt-3 pt-3 border-t border-blue-200 text-sm text-blue-800 flex justify-between font-medium">
+                  <span>Used: <span className="font-bold">{used.toFixed(1)}</span> AF</span>
+                  <span>Allocation: <span className="font-bold">{allocation.toFixed(1)}</span> AF</span>
+               </div>
             </div>
 
-            {/* Usage Stats & Alerts */}
-            <div className="space-y-6 mb-8">
-                <h3 className="font-semibold text-gray-800">Water Usage & Limits</h3>
-                
-                {/* Allotment */}
-                <div>
-                    <div className="flex justify-between text-sm mb-1">
-                        <span className="font-medium text-gray-700">Allotment ({ALLOTMENT_FACTOR} AF/ac)</span>
-                        <span className={used > allotment ? "text-red-600 font-bold" : "text-gray-600"}>
-                            {used.toFixed(1)} / {allotment.toFixed(1)} AF
-                        </span>
+            <div className="grid grid-cols-2 gap-4">
+                {/* 3. Headgate Info */}
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Headgate Info</h3>
+                    <div className="space-y-1">
+                        <p className="text-gray-700 text-sm">Lateral</p>
+                        <p className="text-gray-900 font-bold text-xl">{field.lateral}</p>
+                        <div className="h-2"></div>
+                        <p className="text-gray-700 text-sm">Tap Number</p>
+                        <p className="text-gray-900 font-bold text-xl">{field.tapNumber}</p>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                        <div className={`h-2.5 rounded-full ${used > allotment ? 'bg-red-500' : 'bg-blue-600'}`} style={{width: `${Math.min((used/allotment)*100, 100)}%`}}></div>
-                    </div>
-                    {used > allotment && <p className="text-xs text-red-600 mt-1 font-semibold">⚠️ Allotment exceeded.</p>}
                 </div>
 
-                {/* Allowance */}
-                <div>
-                    <div className="flex justify-between text-sm mb-1">
-                        <span className="font-medium text-gray-700">Allowance ({ALLOWANCE_FACTOR} AF/ac)</span>
-                        <span className={used > allowance ? "text-red-600 font-bold" : "text-gray-600"}>
-                             {used.toFixed(1)} / {allowance.toFixed(1)} AF
-                        </span>
+                {/* 4. Crop / Acres */}
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Crop / Acres</h3>
+                    <div className="space-y-1">
+                        <p className="text-gray-700 text-sm">Crop</p>
+                        <p className="text-gray-900 font-bold text-lg truncate" title={field.crop}>{field.crop}</p>
+                         <div className="h-2"></div>
+                        <p className="text-gray-700 text-sm">Size</p>
+                        <p className="text-gray-900 font-bold text-xl">{field.acres} <span className="text-sm font-normal text-gray-600">Acres</span></p>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                         <div className={`h-2.5 rounded-full ${used > allowance ? 'bg-red-600' : 'bg-indigo-400'}`} style={{width: `${Math.min((used/allowance)*100, 100)}%`}}></div>
-                    </div>
-                     {used > allowance && <p className="text-xs text-red-600 mt-1 font-bold">⚠️ Maximum Allowance exceeded! Excess charges may apply.</p>}
                 </div>
             </div>
 
-            {/* History */}
+            {/* 5. Location */}
+             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Location</h3>
+                <p className="text-gray-800 font-medium text-lg leading-snug">{field.location || "Location not specified"}</p>
+            </div>
+
+            {/* 6. History / Stats */}
             <div>
-                <h3 className="font-semibold text-gray-800 mb-3">Order History</h3>
-                <div className="overflow-x-auto border rounded-md">
-                    <table className="min-w-full text-sm text-left text-gray-500">
-                        <thead className="bg-gray-50 text-gray-700 uppercase">
+                <h3 className="text-xl font-bold text-gray-900 mb-3 border-t pt-4">History / Stats</h3>
+                
+                {/* Current Status Indicator */}
+                <div className={`flex items-center p-3 rounded-lg mb-4 border ${activeOrder ? 'bg-green-50 border-green-200 text-green-800' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                    <div className={`h-3 w-3 rounded-full mr-3 ${activeOrder ? 'bg-green-600 animate-pulse' : 'bg-gray-400'}`}></div>
+                    <span className="font-bold uppercase tracking-wide text-sm">{activeOrder ? 'Water Running' : 'Water Off'}</span>
+                </div>
+
+                {/* Recent History Table */}
+                <div className="overflow-hidden border border-gray-200 rounded-lg shadow-sm">
+                    <table className="min-w-full text-sm text-left">
+                        <thead className="bg-gray-100 text-gray-700 font-bold">
                             <tr>
-                                <th className="px-4 py-2">Date</th>
-                                <th className="px-4 py-2">Amount</th>
-                                <th className="px-4 py-2">Status</th>
+                                <th className="px-4 py-3">Date</th>
+                                <th className="px-4 py-3">Amount</th>
+                                <th className="px-4 py-3">Status</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {history.length > 0 ? history.map(o => (
-                                <tr key={o.id} className="border-b last:border-b-0">
-                                    <td className="px-4 py-2">{o.orderDate}</td>
-                                    <td className="px-4 py-2">{o.requestedAmount} AF</td>
-                                    <td className="px-4 py-2">{o.status}</td>
+                        <tbody className="divide-y divide-gray-200 bg-white">
+                            {history.length > 0 ? history.slice(0, 5).map(o => (
+                                <tr key={o.id}>
+                                    <td className="px-4 py-3 text-gray-600">{o.orderDate}</td>
+                                    <td className="px-4 py-3 font-bold text-gray-900">{o.requestedAmount} AF</td>
+                                    <td className="px-4 py-3">
+                                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                                            o.status === WaterOrderStatus.Completed ? 'bg-gray-100 text-gray-700 border-gray-300' :
+                                            o.status === WaterOrderStatus.InProgress ? 'bg-green-100 text-green-700 border-green-200' :
+                                            'bg-blue-50 text-blue-700 border-blue-200'
+                                         }`}>
+                                            {o.status}
+                                         </span>
+                                    </td>
                                 </tr>
-                            )) : <tr><td colSpan={3} className="px-4 py-2 text-center">No history</td></tr>}
+                            )) : (
+                                <tr><td colSpan={3} className="px-4 py-4 text-center text-gray-400 italic">No recent order history found.</td></tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
             </div>
-
         </div>
       </div>
      </div>
-  )
-}
+  );
+};
 
 export default FieldDetailsModal;
