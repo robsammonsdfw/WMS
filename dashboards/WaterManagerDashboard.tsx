@@ -26,8 +26,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
 
-  const totalWaterUsed = fields.reduce((sum, field) => sum + field.waterUsed, 0);
-  const totalAllocation = fields.reduce((sum, field) => sum + field.totalWaterAllocation, 0);
+  const totalWaterUsed = fields.reduce((sum, field) => sum + (field.waterUsed || 0), 0);
+  const totalAllocation = fields.reduce((sum, field) => sum + (field.totalWaterAllocation || 0), 0);
   const allocationUsedPercent = totalAllocation > 0 ? ((totalWaterUsed / totalAllocation) * 100).toFixed(1) : 0;
 
   const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
@@ -99,37 +99,51 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
           <h2 className="text-2xl font-bold text-gray-800">Welcome, {user.name}</h2>
-          <div className="flex gap-2">
+          
+          {/* Main Action Bar - Visible in both views */}
+          <div className="flex flex-wrap gap-2 w-full xl:w-auto">
+            <button 
+                onClick={() => setIsNewOrderModalOpen(true)}
+                className="flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+                <DocumentAddIcon className="-ml-1 mr-2 h-5 w-5" />
+                <span className="whitespace-nowrap">Create Water Order</span>
+            </button>
+
             <button 
                 onClick={() => setViewMode(viewMode === 'standard' ? 'feed' : 'standard')}
-                className={`inline-flex items-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${viewMode === 'feed' ? 'bg-gray-800 text-white border-transparent' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                className={`flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${viewMode === 'feed' ? 'bg-gray-800 text-white border-transparent' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
             >
                 {viewMode === 'standard' ? (
                    <>
                      <ViewGridIcon className="-ml-1 mr-2 h-5 w-5" />
-                     Switch to Feed View
+                     <span className="whitespace-nowrap">Switch to Feed View</span>
                    </>
                 ) : (
                    <>
                      <RefreshIcon className="-ml-1 mr-2 h-5 w-5" />
-                     Back to Standard View
+                     <span className="whitespace-nowrap">Standard View</span>
                    </>
                 )}
             </button>
             <button 
                     onClick={() => setIsScannerOpen(true)}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    className="flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                 >
                     <QrCodeIcon className="-ml-1 mr-2 h-5 w-5" />
-                    Scan Field Tag
+                    <span className="whitespace-nowrap">Scan Field Tag</span>
             </button>
           </div>
       </div>
       
       {viewMode === 'feed' ? (
-        <RemainingFeedView fields={fields} waterOrders={waterOrders} />
+        <RemainingFeedView 
+          fields={fields} 
+          waterOrders={waterOrders} 
+          onFieldClick={setSelectedFieldDetails}
+        />
       ) : (
         <>
             <SeasonStatistics>
@@ -164,15 +178,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
                 <div className="flex flex-wrap gap-4 justify-between items-center mb-4">
                     <h3 className="text-lg font-semibold text-gray-800">My Fields</h3>
-                    <div className="flex items-center gap-2">
-                        <button 
-                            onClick={() => setIsNewOrderModalOpen(true)}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        >
-                            <DocumentAddIcon className="-ml-1 mr-2 h-5 w-5" />
-                            Create Water Order
-                        </button>
-                    </div>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -188,7 +193,9 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {fields.map(field => {
-                                const usagePercent = field.totalWaterAllocation > 0 ? (field.waterUsed / field.totalWaterAllocation) * 100 : 0;
+                                const allocation = field.totalWaterAllocation || 0;
+                                const used = field.waterUsed || 0;
+                                const usagePercent = allocation > 0 ? (used / allocation) * 100 : 0;
                                 const isRunning = waterOrders.some(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
                                 
                                 return (
@@ -203,7 +210,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.crop}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.acres}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{`${field.waterUsed} / ${field.totalWaterAllocation}`}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{`${used} / ${allocation}`}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRunning ? 'bg-blue-200 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
                                             {isRunning ? 'Running' : 'Idle'}

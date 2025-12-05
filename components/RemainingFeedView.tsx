@@ -5,9 +5,10 @@ import { Field, WaterOrder, WaterOrderStatus } from '../types';
 interface RemainingFeedViewProps {
   fields: Field[];
   waterOrders: WaterOrder[];
+  onFieldClick: (field: Field) => void;
 }
 
-const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrders }) => {
+const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrders, onFieldClick }) => {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {fields.map(field => {
@@ -16,9 +17,11 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
           o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress
         );
 
-        // Calculate Totals
-        const allocation = field.totalWaterAllocation;
-        const used = field.waterUsed;
+        // Calculate Totals with Safety Checks
+        // Defaults to 0 if the API returns null/undefined to prevent app crash
+        const allocation = typeof field.totalWaterAllocation === 'number' ? field.totalWaterAllocation : 0;
+        const used = typeof field.waterUsed === 'number' ? field.waterUsed : 0;
+        
         const remaining = allocation - used;
         const percentUsed = allocation > 0 ? (used / allocation) * 100 : 0;
 
@@ -29,11 +32,12 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
         return (
           <div 
             key={field.id} 
-            className={`${cardColor} rounded-xl shadow-lg overflow-hidden flex flex-col h-64 border-4 border-white ring-1 ring-gray-200`}
+            onClick={() => onFieldClick(field)}
+            className={`${cardColor} rounded-xl shadow-lg overflow-hidden flex flex-col h-64 border-4 border-white ring-1 ring-gray-200 cursor-pointer transition-transform hover:scale-[1.02]`}
           >
             {/* Header */}
             <div className="p-4 text-center">
-              <h3 className="text-2xl font-black text-white tracking-wide uppercase drop-shadow-md">
+              <h3 className="text-2xl font-black text-white tracking-wide uppercase drop-shadow-md truncate">
                 {field.name}
               </h3>
               <p className="text-blue-100 text-sm font-semibold opacity-90">{field.crop} • {field.acres} Acres</p>
