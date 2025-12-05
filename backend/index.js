@@ -5,6 +5,126 @@ const pg = require("pg");
 let dbClient;
 
 /**
+ * Shared Schema Initialization Logic
+ * Defines the tables and views required for the application.
+ */
+async function initSchema(client) {
+    console.log("Running Schema Initialization...");
+    await client.query(`
+        -- 1. Fields Table
+        CREATE TABLE IF NOT EXISTS fields (
+            id VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(255),
+            crop VARCHAR(255),
+            acres NUMERIC,
+            location VARCHAR(255),
+            total_water_allocation NUMERIC,
+            water_used NUMERIC,
+            owner VARCHAR(255),
+            "lateral" VARCHAR(50),
+            tap_number VARCHAR(50)
+        );
+
+        -- 2. Water Orders Table
+        -- Note: status is VARCHAR to be flexible, preventing ENUM issues during development
+        CREATE TABLE IF NOT EXISTS water_orders (
+            id VARCHAR(255) PRIMARY KEY,
+            field_id VARCHAR(255),
+            field_name VARCHAR(255),
+            requester VARCHAR(255),
+            status VARCHAR(50), 
+            order_date TIMESTAMP,
+            requested_amount NUMERIC,
+            ditch_rider_id INT,
+            "lateral" VARCHAR(50),
+            serial_number VARCHAR(100),
+            delivery_start_date DATE,
+            tap_number VARCHAR(50)
+        );
+
+        -- 3. Accounts Table
+        CREATE TABLE IF NOT EXISTS accounts (
+            id SERIAL PRIMARY KEY,
+            account_number VARCHAR(255) UNIQUE NOT NULL,
+            owner_name VARCHAR(255),
+            total_allocation NUMERIC(10, 2) DEFAULT 0
+        );
+        -- Self-heal: Ensure column exists if table was created previously
+        ALTER TABLE accounts ADD COLUMN IF NOT EXISTS total_allocation NUMERIC(10, 2) DEFAULT 0;
+
+        -- 4. Field-Account Link Table (Many-to-Many with Usage Stats)
+        CREATE TABLE IF NOT EXISTS field_accounts (
+            field_id VARCHAR(255), 
+            account_id INT REFERENCES accounts(id),
+            allocation_for_field NUMERIC(10, 2) DEFAULT 0,
+            usage_for_field NUMERIC(10, 2) DEFAULT 0,
+            is_active BOOLEAN DEFAULT FALSE,
+            is_queued BOOLEAN DEFAULT FALSE,
+            PRIMARY KEY (field_id, account_id)
+        );
+
+        -- 5. Water Bank Table
+        CREATE TABLE IF NOT EXISTS water_bank (
+            id SERIAL PRIMARY KEY,
+            account_id INT REFERENCES accounts(id),
+            "lateral" VARCHAR(50),
+            amount_available NUMERIC(10, 2),
+            source VARCHAR(100),
+            field_association VARCHAR(255),
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+
+        -- 6. Water Bank View
+        CREATE OR REPLACE VIEW water_bank_view AS
+        SELECT 
+            wb.id,
+            a.owner_name,
+            wb."lateral",
+            wb.amount_available,
+            wb.source,
+            wb.field_association
+        FROM water_bank wb
+        LEFT JOIN accounts a ON wb.account_id = a.id;
+
+        -- 7. Trigger Logic for Auto-Switching Accounts
+        CREATE OR REPLACE FUNCTION check_usage_limit() RETURNS TRIGGER AS $$
+        DECLARE
+            queued_account_id INT;
+        BEGIN
+            -- Only trigger if usage meets/exceeds allocation AND account is currently active
+            IF NEW.usage_for_field >= NEW.allocation_for_field AND NEW.is_active = TRUE THEN
+                
+                -- Look for a queued account for this specific field
+                SELECT account_id INTO queued_account_id
+                FROM field_accounts
+                WHERE field_id = NEW.field_id AND is_queued = TRUE
+                LIMIT 1;
+
+                IF FOUND THEN
+                    -- Deactivate the current full account
+                    UPDATE field_accounts 
+                    SET is_active = FALSE 
+                    WHERE field_id = NEW.field_id AND account_id = NEW.account_id;
+                    
+                    -- Activate the queued account and remove it from queue
+                    UPDATE field_accounts 
+                    SET is_active = TRUE, is_queued = FALSE
+                    WHERE field_id = NEW.field_id AND account_id = queued_account_id;
+                END IF;
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS trigger_check_usage_limit ON field_accounts;
+        CREATE TRIGGER trigger_check_usage_limit
+        AFTER UPDATE OF usage_for_field ON field_accounts
+        FOR EACH ROW
+        EXECUTE FUNCTION check_usage_limit();
+    `);
+}
+
+/**
  * Retrieves database credentials from environment variables and establishes a connection.
  * Caches the connection for subsequent invocations.
  */
@@ -36,103 +156,8 @@ async function getDbClient() {
         await dbClient.connect();
         console.log("Database connected successfully.");
         
-        // --- SCHEMA INITIALIZATION (Auto-Healing) ---
-        // We use ALTER TABLE ... IF NOT EXISTS to ensure columns are added even if table exists.
-        await dbClient.query(`
-            CREATE TABLE IF NOT EXISTS fields (
-                id VARCHAR(255) PRIMARY KEY,
-                name VARCHAR(255),
-                crop VARCHAR(255),
-                acres NUMERIC,
-                location VARCHAR(255),
-                total_water_allocation NUMERIC,
-                water_used NUMERIC,
-                owner VARCHAR(255),
-                "lateral" VARCHAR(50),
-                tap_number VARCHAR(50)
-            );
-
-            CREATE TABLE IF NOT EXISTS water_orders (
-                id VARCHAR(255) PRIMARY KEY,
-                field_id VARCHAR(255),
-                field_name VARCHAR(255),
-                requester VARCHAR(255),
-                status VARCHAR(50),
-                order_date TIMESTAMP,
-                requested_amount NUMERIC,
-                ditch_rider_id INT,
-                "lateral" VARCHAR(50),
-                serial_number VARCHAR(100),
-                delivery_start_date DATE,
-                tap_number VARCHAR(50)
-            );
-
-            CREATE TABLE IF NOT EXISTS accounts (
-                id SERIAL PRIMARY KEY,
-                account_number VARCHAR(255) UNIQUE NOT NULL,
-                owner_name VARCHAR(255),
-                total_allocation NUMERIC(10, 2) DEFAULT 0
-            );
-            -- Self-heal accounts table if it was created without total_allocation
-            ALTER TABLE accounts ADD COLUMN IF NOT EXISTS total_allocation NUMERIC(10, 2) DEFAULT 0;
-
-            CREATE TABLE IF NOT EXISTS field_accounts (
-                field_id VARCHAR(255), 
-                account_id INT REFERENCES accounts(id),
-                allocation_for_field NUMERIC(10, 2) DEFAULT 0,
-                usage_for_field NUMERIC(10, 2) DEFAULT 0,
-                is_active BOOLEAN DEFAULT FALSE,
-                is_queued BOOLEAN DEFAULT FALSE,
-                PRIMARY KEY (field_id, account_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS water_bank (
-                id SERIAL PRIMARY KEY,
-                account_id INT REFERENCES accounts(id),
-                "lateral" VARCHAR(50),
-                amount_available NUMERIC(10, 2),
-                source VARCHAR(100),
-                field_association VARCHAR(255),
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-
-            CREATE OR REPLACE VIEW water_bank_view AS
-            SELECT 
-                wb.id,
-                a.owner_name,
-                wb."lateral",
-                wb.amount_available,
-                wb.source,
-                wb.field_association
-            FROM water_bank wb
-            LEFT JOIN accounts a ON wb.account_id = a.id;
-
-            -- Trigger Logic for Auto-Switching
-            CREATE OR REPLACE FUNCTION check_usage_limit() RETURNS TRIGGER AS $$
-            DECLARE
-                queued_account_id INT;
-            BEGIN
-                IF NEW.usage_for_field >= NEW.allocation_for_field AND NEW.is_active = TRUE THEN
-                    SELECT account_id INTO queued_account_id
-                    FROM field_accounts
-                    WHERE field_id = NEW.field_id AND is_queued = TRUE
-                    LIMIT 1;
-
-                    IF FOUND THEN
-                        UPDATE field_accounts SET is_active = FALSE WHERE field_id = NEW.field_id AND account_id = NEW.account_id;
-                        UPDATE field_accounts SET is_active = TRUE, is_queued = FALSE WHERE field_id = NEW.field_id AND account_id = queued_account_id;
-                    END IF;
-                END IF;
-                RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
-
-            DROP TRIGGER IF EXISTS trigger_check_usage_limit ON field_accounts;
-            CREATE TRIGGER trigger_check_usage_limit
-            AFTER UPDATE OF usage_for_field ON field_accounts
-            FOR EACH ROW
-            EXECUTE FUNCTION check_usage_limit();
-        `);
+        // Initialize schema on first connect
+        await initSchema(dbClient);
         console.log("Schema check complete.");
 
     } catch (err) {
@@ -159,6 +184,18 @@ exports.handler = async (event) => {
             statusCode: 200,
             headers: corsHeaders,
             body: JSON.stringify({ message: "CORS preflight check passed" })
+        };
+    }
+
+    // SAFETY CHECK: Ensure we are receiving a Proxy Event
+    if (!event.httpMethod) {
+        console.error("Error: Lambda was invoked with raw data, not a Proxy Event.");
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({
+                message: "Configuration Error: 'Use Lambda Proxy integration' is disabled in API Gateway. Please go to API Gateway -> [Method] -> Integration Request -> Check 'Use Lambda Proxy integration' -> Save -> Deploy API."
+            })
         };
     }
 
@@ -201,10 +238,19 @@ exports.handler = async (event) => {
         if (path === '/admin/reset-db' && httpMethod === 'POST') {
             console.log("RESETTING DATABASE...");
             
-            // 1. Clear Data
-            await queryDb(`TRUNCATE water_orders, water_bank, field_accounts, accounts, fields CASCADE`);
+            // 1. DROP ALL TABLES (Instead of Truncate)
+            // This ensures we get rid of any legacy ENUM types that might be causing conflicts.
+            await queryDb(`
+                DROP TABLE IF EXISTS water_orders, water_bank, field_accounts, accounts, fields CASCADE;
+                DROP TYPE IF EXISTS water_order_status; -- Clean up potential legacy enum
+            `);
             
-            // 2. Insert Fields
+            // 2. RECREATE SCHEMA
+            await initSchema(client);
+            
+            // 3. INSERT SEED DATA
+            
+            // Insert Fields
             await queryDb(`
                 INSERT INTO fields (id, name, crop, acres, location, total_water_allocation, water_used, owner, "lateral", tap_number) VALUES 
                 ('F001', 'North Field 1', 'Alfalfa', 120, '43.6150° N, 116.2023° W', 480.0, 150.0, 'Provost Farms', 'A', 'A-12'),
@@ -213,7 +259,7 @@ exports.handler = async (event) => {
                 ('F004', 'West Valley', 'Potatoes', 100, '43.6220° N, 116.2150° W', 400.0, 180.0, 'Miller Land Co', 'B', 'B-08')
             `);
             
-            // 3. Insert Accounts
+            // Insert Accounts
             await queryDb(`
                 INSERT INTO accounts (account_number, owner_name, total_allocation) VALUES 
                 ('ACC-PROV-01', 'Provost Farms', 1000.0),
@@ -221,53 +267,47 @@ exports.handler = async (event) => {
                 ('ACC-MILL-01', 'Miller Land Co', 1500.0)
             `);
             
-            // 4. Link Fields & Accounts
-            
-            // Link F001 to Provost-01
+            // Link Fields & Accounts
             await queryDb(`
                 INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
                 SELECT 'F001', id, 480.0, 150.0, TRUE FROM accounts WHERE account_number = 'ACC-PROV-01'
             `);
-             // Link F001 to Provost-02 (Backup)
             await queryDb(`
                 INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
                 SELECT 'F001', id, 480.0, 0.0, FALSE FROM accounts WHERE account_number = 'ACC-PROV-02'
             `);
-            
-            // Link F002 to Provost-01
             await queryDb(`
                 INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
                 SELECT 'F002', id, 320.0, 100.0, TRUE FROM accounts WHERE account_number = 'ACC-PROV-01'
             `);
-
-            // Link F003 to Miller-01 (75% USAGE ALERT SCENARIO)
+            // Trigger Alert on F003
             await queryDb(`
                 INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
                 SELECT 'F003', id, 600.0, 450.0, TRUE FROM accounts WHERE account_number = 'ACC-MILL-01'
             `);
-
-            // Link F004 to Miller-01
             await queryDb(`
                 INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
                 SELECT 'F004', id, 400.0, 180.0, TRUE FROM accounts WHERE account_number = 'ACC-MILL-01'
             `);
             
-            // 5. Insert Water Bank
+            // Insert Water Bank
             await queryDb(`
                 INSERT INTO water_bank (account_id, "lateral", amount_available, source, field_association)
                 SELECT id, 'B', 200.0, 'Saved Allocation', 'East Ridge' FROM accounts WHERE account_number = 'ACC-MILL-01'
             `);
             
-             // 6. Insert Sample Orders
+             // Insert Sample Orders
              const now = new Date();
              const dayAgo = new Date(now.getTime() - 86400000).toISOString();
              const tenDaysAgo = new Date(now.getTime() - 864000000).toISOString();
              
+             // Fixed: Use "In Progress" (with space) to match Frontend Types if using string comparison, 
+             // though database just stores string now so it accepts anything.
              await queryDb(`
                 INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, "lateral", delivery_start_date)
                 VALUES
                 ('ORD-101', 'F001', 'North Field 1', 'Mike Beus', 'Completed', '${tenDaysAgo}', 24.0, 'A', '${tenDaysAgo}'),
-                ('ORD-102', 'F003', 'East Ridge', 'Mike Beus', 'InProgress', '${dayAgo}', 36.0, 'B', '${dayAgo}')
+                ('ORD-102', 'F003', 'East Ridge', 'Mike Beus', 'In Progress', '${dayAgo}', 36.0, 'B', '${dayAgo}')
             `);
 
             return { statusCode: 200, headers, body: JSON.stringify({ message: "Database Reset and Seeded Successfully" }) };
@@ -309,7 +349,8 @@ exports.handler = async (event) => {
             return { statusCode: 201, headers, body: JSON.stringify({ message: "Order created", id }) };
         }
 
-        if (path.match(/^\/orders\/[a-zA-Z0-9-]+$/) && httpMethod === 'PUT') {
+        // Safe path matching
+        if (path && path.match(/^\/orders\/[a-zA-Z0-9-]+$/) && httpMethod === 'PUT') {
             const orderId = path.split('/').pop();
             console.log(`Updating order ${orderId}. Body:`, body);
             const data = JSON.parse(body);
@@ -380,7 +421,7 @@ exports.handler = async (event) => {
         }
 
         // --- ACCOUNT QUEUE ENDPOINT ---
-        if (path.match(/^\/fields\/[a-zA-Z0-9-]+\/accounts$/) && httpMethod === 'PUT') {
+        if (path && path.match(/^\/fields\/[a-zA-Z0-9-]+\/accounts$/) && httpMethod === 'PUT') {
             const fieldId = path.split('/')[2];
             console.log(`Updating account queue for field ${fieldId}. Body:`, body);
             const { nextAccountId } = JSON.parse(body);
