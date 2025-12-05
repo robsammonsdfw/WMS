@@ -238,13 +238,22 @@ exports.handler = async (event) => {
         if (path === '/admin/reset-db' && httpMethod === 'POST') {
             console.log("RESETTING DATABASE...");
             
-            // 1. DROP ALL TABLES (Instead of Truncate)
-            // This ensures we get rid of any legacy ENUM types that might be causing conflicts.
-            await queryDb(`
-                DROP TABLE IF EXISTS water_orders, water_bank, field_accounts, accounts, fields CASCADE;
-                DROP TYPE IF EXISTS water_order_status; -- Clean up potential legacy enum
-            `);
+            // 1. DROP ALL TABLES & TYPES (Aggressive Cleanup)
+            // We run these individually to ensure no lingering locks or dependency issues block the reset.
+            await queryDb("DROP TRIGGER IF EXISTS trigger_check_usage_limit ON field_accounts");
+            await queryDb("DROP FUNCTION IF EXISTS check_usage_limit");
+            await queryDb("DROP VIEW IF EXISTS water_bank_view CASCADE");
+            await queryDb("DROP TABLE IF EXISTS water_bank CASCADE");
+            await queryDb("DROP TABLE IF EXISTS field_accounts CASCADE");
+            await queryDb("DROP TABLE IF EXISTS water_orders CASCADE");
+            await queryDb("DROP TABLE IF EXISTS accounts CASCADE");
+            await queryDb("DROP TABLE IF EXISTS fields CASCADE");
             
+            // Drop the specific ENUM type that was causing the error
+            await queryDb("DROP TYPE IF EXISTS water_order_status CASCADE");
+            
+            console.log("Database cleared. Re-initializing schema...");
+
             // 2. RECREATE SCHEMA
             await initSchema(client);
             
@@ -301,8 +310,7 @@ exports.handler = async (event) => {
              const dayAgo = new Date(now.getTime() - 86400000).toISOString();
              const tenDaysAgo = new Date(now.getTime() - 864000000).toISOString();
              
-             // Fixed: Use "In Progress" (with space) to match Frontend Types if using string comparison, 
-             // though database just stores string now so it accepts anything.
+             // IMPORTANT: Using "In Progress" (with space) to match Frontend Types
              await queryDb(`
                 INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, "lateral", delivery_start_date)
                 VALUES
