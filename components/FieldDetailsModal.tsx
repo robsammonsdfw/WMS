@@ -1,15 +1,16 @@
 
 import React from 'react';
 import { Field, WaterOrder, WaterOrderStatus } from '../types';
-import { XCircleIcon, UserGroupIcon } from './icons';
+import { XCircleIcon, UserGroupIcon, DocumentAddIcon } from './icons';
 
 interface FieldDetailsModalProps {
   field: Field;
   orders: WaterOrder[];
   onClose: () => void;
+  onCreateOrder: () => void;
 }
 
-const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, onClose }) => {
+const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, onClose, onCreateOrder }) => {
   // Safe number access to prevent crashes if API returns null
   const allocation = field.totalWaterAllocation || 0;
   const used = field.waterUsed || 0;
@@ -33,8 +34,10 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
         role="dialog"
         aria-modal="true"
      >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="p-6 relative space-y-6">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        
+        {/* Scrollable Content */}
+        <div className="p-6 relative space-y-6 overflow-y-auto flex-1">
             <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><XCircleIcon className="h-8 w-8"/></button>
             
             {/* 1. Field Name */}
@@ -54,7 +57,7 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                </div>
             </div>
 
-            {/* 3. Account Numbers (NEW) */}
+            {/* 3. Account Numbers */}
             <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
                 <div className="flex items-center space-x-2 mb-2">
                     <UserGroupIcon className="h-4 w-4 text-indigo-500" />
@@ -169,6 +172,17 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                     </table>
                 </div>
             </div>
+        </div>
+
+        {/* Footer Actions */}
+        <div className="p-4 bg-gray-50 border-t border-gray-200">
+            <button 
+                onClick={onCreateOrder}
+                className="w-full flex items-center justify-center px-4 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+                <DocumentAddIcon className="-ml-1 mr-2 h-5 w-5" />
+                Create Water Order
+            </button>
         </div>
       </div>
      </div>

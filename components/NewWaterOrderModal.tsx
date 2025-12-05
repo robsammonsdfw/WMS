@@ -7,10 +7,11 @@ interface NewWaterOrderModalProps {
   onClose: () => void;
   onOrderCreate: (data: { fieldId: string; requestedAmount: number; deliveryStartDate: string; }) => void;
   fields: Field[];
+  initialFieldId?: string;
 }
 
-const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate, fields }) => {
-  const [fieldId, setFieldId] = useState<string>('');
+const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate, fields, initialFieldId }) => {
+  const [fieldId, setFieldId] = useState<string>(initialFieldId || '');
   const [inchesRequested, setInchesRequested] = useState<string>('');
   const [deliveryStartDate, setDeliveryStartDate] = useState<string>('');
   const [error, setError] = useState('');
@@ -57,7 +58,7 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"

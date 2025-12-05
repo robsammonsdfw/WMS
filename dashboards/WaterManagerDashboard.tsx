@@ -5,7 +5,7 @@ import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
 import SeasonStatistics from '../components/SeasonStatistics';
 import FieldDetailsModal from '../components/FieldDetailsModal';
-import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, DocumentAddIcon, RefreshIcon, ChartBarIcon as ViewGridIcon } from '../components/icons';
+import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, RefreshIcon, ChartBarIcon as ViewGridIcon, BellIcon } from '../components/icons';
 import QRCodeModal from '../components/QRCodeModal';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
 import Scanner from '../components/Scanner';
@@ -26,6 +26,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [selectedFieldDetails, setSelectedFieldDetails] = useState<Field | null>(null);
   const [alertField, setAlertField] = useState<Field | null>(null);
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+  const [createOrderInitialFieldId, setCreateOrderInitialFieldId] = useState<string | undefined>(undefined);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   // Check for alerts on fields whenever 'fields' data updates
@@ -89,6 +90,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         await createWaterOrder(newOrderData);
         await refreshWaterOrders();
         setIsNewOrderModalOpen(false);
+        setCreateOrderInitialFieldId(undefined);
         alert(`New water order for ${field.name} has been created and sent for approval.`);
     } catch (error: any) {
         alert(error.message || error);
@@ -137,14 +139,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
           
           <div className="flex flex-wrap gap-2 w-full xl:w-auto">
             <button 
-                onClick={() => setIsNewOrderModalOpen(true)}
-                className="flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-                <DocumentAddIcon className="-ml-1 mr-2 h-5 w-5" />
-                <span className="whitespace-nowrap">Create Water Order</span>
-            </button>
-
-            <button 
                 onClick={() => setViewMode(viewMode === 'standard' ? 'feed' : 'standard')}
                 className={`flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${viewMode === 'feed' ? 'bg-gray-800 text-white border-transparent' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
             >
@@ -166,6 +160,21 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 >
                     <QrCodeIcon className="-ml-1 mr-2 h-5 w-5" />
                     <span className="whitespace-nowrap">Scan Field Tag</span>
+            </button>
+
+            {/* TEMP: Developer Test Button */}
+            <button 
+                onClick={() => {
+                    if(fields.length > 0) {
+                        setAlertField(fields[0]);
+                    } else {
+                        alert("No fields loaded to test.");
+                    }
+                }}
+                className="flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            >
+                <BellIcon className="-ml-1 mr-2 h-5 w-5" />
+                <span className="whitespace-nowrap">Test Alert</span>
             </button>
           </div>
       </div>
@@ -290,13 +299,22 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             field={selectedFieldDetails}
             orders={waterOrders}
             onClose={() => setSelectedFieldDetails(null)}
+            onCreateOrder={() => {
+                setCreateOrderInitialFieldId(selectedFieldDetails.id);
+                // We deliberately do not close the details modal here, but ensure z-index of order modal is higher
+                setIsNewOrderModalOpen(true);
+            }}
           />
       )}
 
       {isNewOrderModalOpen && (
           <NewWaterOrderModal
             fields={fields}
-            onClose={() => setIsNewOrderModalOpen(false)}
+            initialFieldId={createOrderInitialFieldId}
+            onClose={() => {
+                setIsNewOrderModalOpen(false);
+                setCreateOrderInitialFieldId(undefined);
+            }}
             onOrderCreate={handleManualOrderCreate}
           />
       )}
