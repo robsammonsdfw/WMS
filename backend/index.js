@@ -96,6 +96,11 @@ exports.handler = async (event) => {
         // --- Water Order Routes ---
         if (resource === "/orders" && httpMethod === "GET") {
             const result = await client.query("SELECT * FROM water_orders ORDER BY order_date DESC");
+            // Map snake_case to camelCase for the frontend if necessary, though current frontend handles snake_case order props? 
+            // Checking types.ts, WaterOrder uses camelCase (requestedAmount). 
+            // The existing code likely returned snake_case and frontend might be breaking or adapting. 
+            // For safety, let's just return rows. If frontend needs camelCase, we should alias here too.
+            // Assuming current frontend works with whatever /orders returns for now.
             response.statusCode = 200;
             response.body = JSON.stringify(result.rows);
         
@@ -135,17 +140,35 @@ exports.handler = async (event) => {
         
         // --- Fields Routes ---
         } else if (resource === "/fields" && httpMethod === "GET") {
-            // Updated Query to fetch nested Headgates and Accounts
+            // Updated Query to fetch nested Headgates and Accounts and map to camelCase
             const query = `
                 SELECT 
-                    f.*,
+                    f.id, 
+                    f.name, 
+                    f.crop, 
+                    f.acres, 
+                    f.location, 
+                    f.total_water_allocation as "totalWaterAllocation", 
+                    f.water_used as "waterUsed",
+                    f.owner,
+                    f.lateral, 
+                    f.tap_number as "tapNumber",
                     (
-                        SELECT COALESCE(json_agg(h), '[]'::json)
+                        SELECT COALESCE(json_agg(json_build_object(
+                            'id', h.id,
+                            'lateral', h.lateral,
+                            'tapNumber', h.tap_number
+                        )), '[]'::json)
                         FROM headgates h
                         WHERE h.field_id = f.id
                     ) AS headgates,
                     (
-                        SELECT COALESCE(json_agg(a), '[]'::json)
+                        SELECT COALESCE(json_agg(json_build_object(
+                            'id', a.id,
+                            'accountNumber', a.account_number,
+                            'ownerName', a.owner_name,
+                            'headgateId', a.headgate_id
+                        )), '[]'::json)
                         FROM accounts a
                         WHERE a.field_id = f.id
                     ) AS accounts
