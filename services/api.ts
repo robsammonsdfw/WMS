@@ -123,6 +123,5 @@ export const setFieldAccountQueue = (fieldId: string, nextAccountId: number): Pr
 // --- API Functions for Water Bank ---
 
 export const getWaterBank = (): Promise<WaterBankEntry[]> => {
-    // If the endpoint doesn't exist yet in the live backend, returns empty array in catch
     return apiFetch('/water-bank').catch(() => []);
 };

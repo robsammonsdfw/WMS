@@ -30,10 +30,36 @@ async function getDbClient() {
 
     await dbClient.connect();
     
-    // --- SCHEMA INITIALIZATION (Run once/idempotent) ---
-    // This ensures the new tables for the Alert/Water Bank feature exist.
-    // NOTE: In a production migration, you would separate these.
+    // --- SCHEMA INITIALIZATION & MIGRATION ---
     const schemaQuery = `
+        CREATE TABLE IF NOT EXISTS fields (
+            id VARCHAR(255) PRIMARY KEY,
+            name VARCHAR(255),
+            crop VARCHAR(255),
+            acres NUMERIC,
+            location VARCHAR(255),
+            total_water_allocation NUMERIC,
+            water_used NUMERIC,
+            owner VARCHAR(255),
+            lateral VARCHAR(50),
+            tap_number VARCHAR(50)
+        );
+
+        CREATE TABLE IF NOT EXISTS water_orders (
+            id VARCHAR(255) PRIMARY KEY,
+            field_id VARCHAR(255),
+            field_name VARCHAR(255),
+            requester VARCHAR(255),
+            status VARCHAR(50),
+            order_date TIMESTAMP,
+            requested_amount NUMERIC,
+            ditch_rider_id INT,
+            lateral VARCHAR(50),
+            serial_number VARCHAR(100),
+            delivery_start_date DATE,
+            tap_number VARCHAR(50)
+        );
+
         CREATE TABLE IF NOT EXISTS accounts (
             id SERIAL PRIMARY KEY,
             account_number VARCHAR(255) UNIQUE NOT NULL,
@@ -42,7 +68,7 @@ async function getDbClient() {
         );
 
         CREATE TABLE IF NOT EXISTS field_accounts (
-            field_id VARCHAR(255), -- Linking to existing fields table (assuming text id)
+            field_id VARCHAR(255), 
             account_id INT REFERENCES accounts(id),
             allocation_for_field NUMERIC(10, 2) DEFAULT 0,
             usage_for_field NUMERIC(10, 2) DEFAULT 0,
@@ -53,15 +79,14 @@ async function getDbClient() {
 
         CREATE TABLE IF NOT EXISTS water_bank (
             id SERIAL PRIMARY KEY,
-            account_id INT REFERENCES accounts(id), -- Linked to the seller/owner account
+            account_id INT REFERENCES accounts(id),
             lateral VARCHAR(50),
             amount_available NUMERIC(10, 2),
-            source VARCHAR(100), -- e.g., 'Saved Allocation', 'Market Purchase'
-            field_association VARCHAR(255), -- Text reference to origin field
+            source VARCHAR(100),
+            field_association VARCHAR(255),
             created_at TIMESTAMP DEFAULT NOW()
         );
 
-        -- VIEW: Water Bank View (Combines Bank data with Account Owner Names)
         CREATE OR REPLACE VIEW water_bank_view AS
         SELECT 
             wb.id,
@@ -73,210 +98,249 @@ async function getDbClient() {
         FROM water_bank wb
         LEFT JOIN accounts a ON wb.account_id = a.id;
 
-        -- FUNCTION & TRIGGER: Auto-switch account when usage limit is reached
+        -- Trigger Logic for Auto-Switching
         CREATE OR REPLACE FUNCTION check_usage_limit() RETURNS TRIGGER AS $$
         DECLARE
             queued_account_id INT;
         BEGIN
-            -- Check if usage exceeds or equals allocation and the account is currently active
             IF NEW.usage_for_field >= NEW.allocation_for_field AND NEW.is_active = TRUE THEN
-                
-                -- Find the queued account for this specific field
                 SELECT account_id INTO queued_account_id
                 FROM field_accounts
                 WHERE field_id = NEW.field_id AND is_queued = TRUE
                 LIMIT 1;
 
                 IF FOUND THEN
-                    -- Deactivate current account
-                    UPDATE field_accounts 
-                    SET is_active = FALSE 
-                    WHERE field_id = NEW.field_id AND account_id = NEW.account_id;
-                    
-                    -- Activate the queued account and unmark it as queued
-                    UPDATE field_accounts 
-                    SET is_active = TRUE, is_queued = FALSE 
-                    WHERE field_id = NEW.field_id AND account_id = queued_account_id;
+                    UPDATE field_accounts SET is_active = FALSE WHERE field_id = NEW.field_id AND account_id = NEW.account_id;
+                    UPDATE field_accounts SET is_active = TRUE, is_queued = FALSE WHERE field_id = NEW.field_id AND account_id = queued_account_id;
                 END IF;
             END IF;
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
 
-        -- Safely drop trigger if exists to allow update
         DROP TRIGGER IF EXISTS trigger_check_usage_limit ON field_accounts;
-        
         CREATE TRIGGER trigger_check_usage_limit
         AFTER UPDATE OF usage_for_field ON field_accounts
         FOR EACH ROW
         EXECUTE FUNCTION check_usage_limit();
     `;
+
     try {
         await dbClient.query(schemaQuery);
-    } catch (err) {
-        console.error("Schema initialization failed", err);
+        
+        // --- DATA MIGRATION CHECK ---
+        // If accounts table is empty but fields exist, create default accounts for existing fields
+        const checkAccounts = await dbClient.query("SELECT COUNT(*) FROM accounts");
+        if (parseInt(checkAccounts.rows[0].count) === 0) {
+             const existingFields = await dbClient.query("SELECT * FROM fields");
+             for (const field of existingFields.rows) {
+                 if (field.owner) {
+                     // Create/Get Account
+                     const accRes = await dbClient.query(
+                         `INSERT INTO accounts (account_number, owner_name, total_allocation) 
+                          VALUES ($1, $2, $3) 
+                          ON CONFLICT (account_number) DO UPDATE SET total_allocation = accounts.total_allocation
+                          RETURNING id`,
+                         [`ACC-${field.id}`, field.owner, 1000] // Dummy account number and default global alloc
+                     );
+                     const accId = accRes.rows[0].id;
+                     
+                     // Link Field to Account
+                     await dbClient.query(
+                         `INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
+                          VALUES ($1, $2, $3, $4, TRUE)
+                          ON CONFLICT DO NOTHING`,
+                          [field.id, accId, field.total_water_allocation, field.water_used]
+                     );
+                 }
+             }
+        }
+
+    } catch (e) {
+        console.error("Schema init failed:", e);
     }
 
     return dbClient;
 }
 
 exports.handler = async (event) => {
+    // Handling CORS preflight requests
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers: {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+            },
+            body: JSON.stringify({ message: "CORS preflight check passed" })
+        };
+    }
+
+    const client = await getDbClient();
+    const { httpMethod, path, body } = event;
+
     const headers = {
-        "Access-Control-Allow-Origin": "*", 
-        "Access-Control-Allow-Headers": "Content-Type, x-api-key, Authorization",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/json"
     };
 
-    let client;
     try {
-        client = await getDbClient();
-    } catch (e) {
-        console.error("DB Connection Failed", e);
-        return { statusCode: 500, headers, body: JSON.stringify({ message: "Database Connection Failed" }) };
-    }
-    
-    let resource, httpMethod;
-    const body = event.body ? JSON.parse(event.body) : {};
-    const pathParameters = event.pathParameters || {};
-
-    if (event.requestContext && event.requestContext.http) {
-        httpMethod = event.requestContext.http.method;
-        const rawPath = event.requestContext.http.path; 
-        resource = rawPath.replace(/^\/v1/, ''); 
-    } else {
-        resource = event.resource; // Fallback
-        httpMethod = event.httpMethod;
-    }
-
-    let response = { headers }; 
-
-    try {
-        if (httpMethod === 'OPTIONS') {
-            response.statusCode = 200;
-            return response;
+        // --- WATER ORDER ENDPOINTS ---
+        if (path === '/orders' && httpMethod === 'GET') {
+            const res = await client.query("SELECT * FROM water_orders ORDER BY order_date DESC");
+            // Map keys to camelCase for frontend
+            const orders = res.rows.map(row => ({
+                id: row.id,
+                fieldId: row.field_id,
+                fieldName: row.field_name,
+                requester: row.requester,
+                status: row.status,
+                orderDate: row.order_date,
+                requestedAmount: parseFloat(row.requested_amount),
+                ditchRiderId: row.ditch_rider_id,
+                lateral: row.lateral,
+                serialNumber: row.serial_number,
+                deliveryStartDate: row.delivery_start_date,
+                tapNumber: row.tap_number
+            }));
+            return { statusCode: 200, headers, body: JSON.stringify(orders) };
         }
 
-        // --- Water Order Routes ---
-        if (resource === "/orders" && httpMethod === "GET") {
-            const result = await client.query("SELECT * FROM water_orders ORDER BY order_date DESC");
-            response.statusCode = 200;
-            response.body = JSON.stringify(result.rows);
-        
-        } else if (resource === "/orders" && httpMethod === "POST") {
-            const { fieldId, fieldName, requester, status, deliveryStartDate, requestedAmount, ditchRiderId, lateral, serialNumber, tapNumber } = body;
+        if (path === '/orders' && httpMethod === 'POST') {
+            const data = JSON.parse(body);
+            const id = Math.random().toString(36).substring(2, 9);
+            const now = new Date().toISOString();
             
-            const newOrderId = `WO-${String(Math.floor(Math.random() * 900) + 100)}-${Date.now().toString().slice(-4)}`;
-            const orderDate = new Date().toISOString().split('T')[0];
+            await client.query(
+                `INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, lateral, delivery_start_date, tap_number) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                [id, data.fieldId, data.fieldName, data.requester, data.status, now, data.requestedAmount, data.lateral, data.deliveryStartDate, data.tapNumber]
+            );
 
-            const query = `
-                INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, ditch_rider_id, lateral, serial_number, delivery_start_date, tap_number)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                RETURNING *;
-            `;
-            const values = [newOrderId, fieldId, fieldName, requester, status, orderDate, requestedAmount, ditchRiderId, lateral, serialNumber, deliveryStartDate, tapNumber];
-            const result = await client.query(query, values);
-            response.statusCode = 201;
-            response.body = JSON.stringify(result.rows[0]);
+            return { statusCode: 201, headers, body: JSON.stringify({ message: "Order created", id }) };
+        }
 
-        } else if (resource.match(/^\/orders\/[^/]+$/) && httpMethod === "PUT") {
-            let id = pathParameters.id || resource.split('/').pop();
-            const { status } = body; 
-            const query = "UPDATE water_orders SET status = $1 WHERE id = $2 RETURNING *;";
-            const result = await client.query(query, [status, id]);
-            response.statusCode = 200;
-            response.body = JSON.stringify(result.rows[0]);
-        
-        // --- Field Routes ---
-        } else if (resource === "/fields" && httpMethod === "GET") {
-            // Enhanced query to fetch fields with their linked accounts and status
-            const query = `
-                SELECT 
-                    f.id, 
-                    f.name, 
-                    f.crop, 
-                    f.acres, 
-                    f.location, 
-                    f.total_water_allocation as "totalWaterAllocation", 
-                    f.water_used as "waterUsed",
-                    f.owner,
-                    f."lateral", 
-                    f.tap_number as "tapNumber",
-                    (
-                        SELECT COALESCE(json_agg(json_build_object(
-                            'id', h.id,
-                            'lateral', h.lateral_name,
-                            'tapNumber', h.tap_number
-                        )), '[]'::json)
-                        FROM headgates h
-                        WHERE h.field_id = f.id
-                    ) AS headgates,
-                    (
-                        SELECT COALESCE(json_agg(json_build_object(
-                            'id', a.id,
-                            'accountNumber', a.account_number,
-                            'ownerName', a.owner_name,
-                            'allocationForField', fa.allocation_for_field,
-                            'usageForField', fa.usage_for_field,
-                            'isActive', fa.is_active,
-                            'isQueued', fa.is_queued
-                        )), '[]'::json)
-                        FROM accounts a
-                        JOIN field_accounts fa ON fa.account_id = a.id
-                        WHERE fa.field_id = f.id
-                    ) AS accounts
-                FROM fields f
-                ORDER BY f.name ASC;
-            `;
-            const result = await client.query(query);
-            response.statusCode = 200;
-            response.body = JSON.stringify(result.rows);
+        if (path.match(/^\/orders\/[a-zA-Z0-9-]+$/) && httpMethod === 'PUT') {
+            const orderId = path.split('/').pop();
+            const data = JSON.parse(body);
+            
+            // Only update fields that are provided
+            // Note: In a real app, you'd build the query dynamically. 
+            // Here we assume status update is the primary use case or full object passed.
+            await client.query(
+                `UPDATE water_orders SET status = $1 WHERE id = $2`,
+                [data.status, orderId]
+            );
 
-        // --- New Route: Update Field Account Queue ---
-        } else if (resource.match(/^\/fields\/[^/]+\/accounts$/) && httpMethod === "PUT") {
-            // Logic to update the queued account for a field
-            let id = pathParameters.id || resource.split('/')[2]; // /fields/{id}/accounts
-            const { nextAccountId } = body;
-
-            if (!nextAccountId) {
-                response.statusCode = 400;
-                response.body = JSON.stringify({ message: "nextAccountId is required" });
-            } else {
-                // 1. Clear existing queue for this field
-                await client.query("UPDATE field_accounts SET is_queued = FALSE WHERE field_id = $1", [id]);
-                
-                // 2. Set new queued account
-                const updateQuery = "UPDATE field_accounts SET is_queued = TRUE WHERE field_id = $1 AND account_id = $2 RETURNING *";
-                await client.query(updateQuery, [id, nextAccountId]);
-
-                response.statusCode = 200;
-                response.body = JSON.stringify({ message: "Queue updated successfully" });
+            // TODO: If order completed, update water_used in fields table & field_accounts table
+            if (data.status === 'Completed') {
+                // 1. Get order details
+                const orderRes = await client.query("SELECT field_id, requested_amount FROM water_orders WHERE id = $1", [orderId]);
+                if(orderRes.rows.length > 0) {
+                    const { field_id, requested_amount } = orderRes.rows[0];
+                    const amount = parseFloat(requested_amount);
+                    
+                    // 2. Update Field Total
+                    await client.query("UPDATE fields SET water_used = COALESCE(water_used, 0) + $1 WHERE id = $2", [amount, field_id]);
+                    
+                    // 3. Update Active Account Usage (Triggers auto-switch via DB Trigger if limit reached)
+                    await client.query(`
+                        UPDATE field_accounts 
+                        SET usage_for_field = usage_for_field + $1 
+                        WHERE field_id = $2 AND is_active = TRUE
+                    `, [amount, field_id]);
+                }
             }
-            
-        // --- Water Bank Route ---
-        } else if (resource === "/water-bank" && httpMethod === "GET") {
-             // Query the VIEW we created
-             const result = await client.query("SELECT * FROM water_bank_view");
-             // Helper to map snake to camel for frontend
-             const mapped = result.rows.map(row => ({
-                 id: row.id,
-                 ownerName: row.owner_name,
-                 lateral: row.lateral,
-                 amountAvailable: row.amount_available,
-                 source: row.source,
-                 fieldAssociation: row.field_association
-             }));
-             response.statusCode = 200;
-             response.body = JSON.stringify(mapped);
 
-        } else {
-            response.statusCode = 404;
-            response.body = JSON.stringify({ message: `Route not found: ${httpMethod} ${resource}` });
+            return { statusCode: 200, headers, body: JSON.stringify({ message: "Order updated" }) };
         }
-    } catch (error) {
-        console.error("Handler error:", error);
-        response.statusCode = 500;
-        response.body = JSON.stringify({ message: "Internal Server Error", error: error.message });
+
+        // --- FIELDS ENDPOINTS ---
+        if (path === '/fields' && httpMethod === 'GET') {
+            // Get Basic Fields
+            const fieldsRes = await client.query("SELECT * FROM fields ORDER BY name ASC");
+            
+            // For each field, fetch linked accounts
+            // Optimization: In production, do this with a single complex JOIN or JSON aggregation. 
+            // For clarity here, we iterate or fetch all.
+            const allAccountsRes = await client.query(`
+                SELECT fa.*, a.account_number, a.owner_name 
+                FROM field_accounts fa 
+                JOIN accounts a ON fa.account_id = a.id
+            `);
+
+            const fields = fieldsRes.rows.map(row => {
+                const linkedAccounts = allAccountsRes.rows
+                    .filter(acc => acc.field_id === row.id)
+                    .map(acc => ({
+                        id: acc.account_id,
+                        accountNumber: acc.account_number,
+                        ownerName: acc.owner_name,
+                        allocationForField: parseFloat(acc.allocation_for_field),
+                        usageForField: parseFloat(acc.usage_for_field),
+                        isActive: acc.is_active,
+                        isQueued: acc.is_queued
+                    }));
+
+                return {
+                    id: row.id,
+                    name: row.name,
+                    crop: row.crop,
+                    acres: parseFloat(row.acres),
+                    location: row.location,
+                    totalWaterAllocation: parseFloat(row.total_water_allocation),
+                    waterUsed: parseFloat(row.water_used),
+                    owner: row.owner,
+                    lateral: row.lateral, 
+                    tapNumber: row.tap_number,
+                    accounts: linkedAccounts
+                };
+            });
+
+            return { statusCode: 200, headers, body: JSON.stringify(fields) };
+        }
+
+        // --- ACCOUNT QUEUE ENDPOINT ---
+        if (path.match(/^\/fields\/[a-zA-Z0-9-]+\/accounts$/) && httpMethod === 'PUT') {
+            const fieldId = path.split('/')[2]; // /fields/:id/accounts
+            const { nextAccountId } = JSON.parse(body);
+
+            // 1. Reset current queue for this field
+            await client.query("UPDATE field_accounts SET is_queued = FALSE WHERE field_id = $1", [fieldId]);
+            
+            // 2. Set new queued account
+            await client.query("UPDATE field_accounts SET is_queued = TRUE WHERE field_id = $1 AND account_id = $2", [fieldId, nextAccountId]);
+
+            return { statusCode: 200, headers, body: JSON.stringify({ message: "Queue updated" }) };
+        }
+
+        // --- WATER BANK ENDPOINT ---
+        if (path === '/water-bank' && httpMethod === 'GET') {
+            const res = await client.query("SELECT * FROM water_bank_view ORDER BY amount_available DESC");
+             const bankEntries = res.rows.map(row => ({
+                id: row.id,
+                ownerName: row.owner_name,
+                lateral: row.lateral,
+                amountAvailable: parseFloat(row.amount_available),
+                source: row.source,
+                fieldAssociation: row.field_association
+            }));
+            return { statusCode: 200, headers, body: JSON.stringify(bankEntries) };
+        }
+
+        return {
+            statusCode: 404,
+            headers,
+            body: JSON.stringify({ message: "Endpoint not found" })
+        };
+
+    } catch (err) {
+        console.error("Handler Error:", err);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ message: err.message })
+        };
     }
-    
-    return response;
 };
