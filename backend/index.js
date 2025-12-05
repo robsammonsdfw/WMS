@@ -141,6 +141,8 @@ exports.handler = async (event) => {
         // --- Fields Routes ---
         } else if (resource === "/fields" && httpMethod === "GET") {
             // Updated Query to fetch nested Headgates and Accounts and map to camelCase
+            // NOTE: We select f."lateral" in quotes to avoid keyword issues if it exists,
+            // and we select h.lateral_name from headgates and map it to 'lateral' property for frontend.
             const query = `
                 SELECT 
                     f.id, 
@@ -151,12 +153,12 @@ exports.handler = async (event) => {
                     f.total_water_allocation as "totalWaterAllocation", 
                     f.water_used as "waterUsed",
                     f.owner,
-                    f.lateral, 
+                    f."lateral", 
                     f.tap_number as "tapNumber",
                     (
                         SELECT COALESCE(json_agg(json_build_object(
                             'id', h.id,
-                            'lateral', h.lateral,
+                            'lateral', h.lateral_name,
                             'tapNumber', h.tap_number
                         )), '[]'::json)
                         FROM headgates h
