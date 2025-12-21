@@ -18,10 +18,12 @@ const getBaseUrl = () => {
     // @ts-ignore
     url = (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
   }
-  if (url.includes('execute-api.us-east-1.amazonaws.com')) {
-      if (url.endsWith('/')) url = url.slice(0, -1);
-      if (!url.endsWith('/v1')) url = `${url}/v1`;
+  
+  // Normalize the URL
+  if (url.endsWith('/')) {
+      url = url.slice(0, -1);
   }
+  
   return url;
 };
 
@@ -33,17 +35,19 @@ const getApiKey = () => {
 
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     const baseUrl = getBaseUrl();
-    const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-    const url = `${cleanBase}${cleanEndpoint}`;
+    const url = `${baseUrl}${cleanEndpoint}`;
+    
     const apiKey = getApiKey();
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        ...options.headers as Record<string, string>,
+        ...options.headers as Record<string, string> || {},
     };
+    
     if (apiKey) headers['x-api-key'] = apiKey;
 
     try {
+        console.log(`Fetching: ${url}`);
         const response = await fetch(url, { ...options, headers });
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred' }));

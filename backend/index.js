@@ -6,11 +6,13 @@ let dbClient;
 async function initSchema(client) {
     console.log("Running Schema Initialization...");
     await client.query(`
+        -- 1. Laterals
         CREATE TABLE IF NOT EXISTS laterals (
             id VARCHAR(255) PRIMARY KEY,
             name VARCHAR(255) NOT NULL
         );
 
+        -- 2. Headgates
         CREATE TABLE IF NOT EXISTS headgates (
             id VARCHAR(255) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -18,6 +20,7 @@ async function initSchema(client) {
             tap_number VARCHAR(50)
         );
 
+        -- 3. Fields
         CREATE TABLE IF NOT EXISTS fields (
             id VARCHAR(255) PRIMARY KEY,
             name VARCHAR(255),
@@ -29,12 +32,14 @@ async function initSchema(client) {
             owner VARCHAR(255)
         );
 
+        -- 4. Field-Headgate Association
         CREATE TABLE IF NOT EXISTS field_headgates (
             field_id VARCHAR(255) REFERENCES fields(id),
             headgate_id VARCHAR(255) REFERENCES headgates(id),
             PRIMARY KEY (field_id, headgate_id)
         );
 
+        -- 5. Water Orders
         CREATE TABLE IF NOT EXISTS water_orders (
             id VARCHAR(255) PRIMARY KEY,
             field_id VARCHAR(255) REFERENCES fields(id),
@@ -50,6 +55,7 @@ async function initSchema(client) {
             tap_number VARCHAR(50)
         );
 
+        -- 6. Accounts
         CREATE TABLE IF NOT EXISTS accounts (
             id SERIAL PRIMARY KEY,
             account_number VARCHAR(255) UNIQUE NOT NULL,
@@ -97,25 +103,30 @@ exports.handler = async (event) => {
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
     };
 
-    // CRITICAL: Handle OPTIONS immediately for CORS preflight
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers: corsHeaders };
     }
 
     const headers = { ...corsHeaders, "Content-Type": "application/json" };
     
-    // Normalize path to handle stage prefixes like /v1/laterals -> /laterals
+    // Improved Path Normalization
     let path = event.path || "";
+    // Remove stage prefix if present
     if (path.startsWith('/v1')) {
         path = path.substring(3);
     }
+    // Remove trailing slashes
+    if (path.length > 1 && path.endsWith('/')) {
+        path = path.slice(0, -1);
+    }
+
     const httpMethod = event.httpMethod;
 
     let client;
     try { 
         client = await getDbClient(); 
     } catch (e) { 
-        console.error("DB connection error in handler:", e);
+        console.error("Database connection failed:", e);
         return { statusCode: 500, headers, body: JSON.stringify({ message: "DB Connect Failed" }) }; 
     }
 
@@ -129,7 +140,7 @@ exports.handler = async (event) => {
             await client.query(`INSERT INTO headgates (id, name, lateral_id, tap_number) VALUES ('HG-A1', 'A-North Gate', 'L-A', 'A-101'), ('HG-B1', 'B-Main Gate', 'L-B', 'B-201')`);
             await client.query(`INSERT INTO fields (id, name, crop, acres, total_water_allocation, water_used) VALUES ('F-01', 'North Meadows', 'Alfalfa', 120, 480, 150), ('F-02', 'River Bend', 'Corn', 80, 320, 40)`);
             await client.query("INSERT INTO field_headgates (field_id, headgate_id) VALUES ('F-01', 'HG-A1'), ('F-02', 'HG-B1')");
-            return { statusCode: 200, headers, body: JSON.stringify({ message: "Database reset and seeded." }) };
+            return { statusCode: 200, headers, body: JSON.stringify({ message: "Seeded" }) };
         }
 
         if (path === '/laterals') {
@@ -186,9 +197,9 @@ exports.handler = async (event) => {
             return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
         }
 
-        return { statusCode: 404, headers, body: JSON.stringify({ message: `Path ${path} not found` }) };
+        return { statusCode: 404, headers, body: JSON.stringify({ message: `Route not found: ${httpMethod} ${path}` }) };
     } catch (err) {
-        console.error("Handler Exception:", err);
+        console.error("Handler error:", err);
         return { statusCode: 500, headers, body: JSON.stringify({ message: err.message }) };
     }
 };
