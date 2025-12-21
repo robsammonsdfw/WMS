@@ -1,4 +1,5 @@
 
+
 export enum UserRole {
   WaterManager = 'Water Manager',
   WaterOffice = 'Water Office',
@@ -10,6 +11,7 @@ export interface User {
   id: number;
   name: string;
   role: UserRole;
+  assignedLaterals?: string[]; // IDs of laterals this rider is responsible for
 }
 
 export enum WaterOrderStatus {
@@ -27,9 +29,16 @@ export enum WaterOrderType {
   Update = 'Update-Delivery',
 }
 
+export interface Lateral {
+  id: string;
+  name: string;
+}
+
 export interface Headgate {
-  id: number;
-  lateral: string;
+  id: string;
+  name: string;
+  lateralId: string;
+  lateral?: string;
   tapNumber: string;
 }
 
@@ -37,21 +46,11 @@ export interface Account {
   id: number;
   accountNumber: string;
   ownerName?: string;
-  headgateId?: number; 
-  // Fields specific to the Field-Account relationship
+  headgateId?: string; 
   allocationForField?: number;
   usageForField?: number;
-  isActive?: boolean; // Is this the currently billing account?
-  isQueued?: boolean; // Is this the next account in line?
-}
-
-export interface WaterBankEntry {
-  id: number;
-  ownerName: string;
-  lateral: string;
-  amountAvailable: number;
-  source: string;
-  fieldAssociation?: string; // Optional name of a field this entry might be tied to
+  isActive?: boolean;
+  isQueued?: boolean;
 }
 
 export interface Field {
@@ -63,17 +62,12 @@ export interface Field {
   totalWaterAllocation: number;
   waterUsed: number;
   owner?: string; 
-  
-  // Relational Data
-  headgates: Headgate[]; 
-  accounts: Account[]; // List of all accounts linked to this field
-  
-  // Computed helpers (optional, but useful for UI)
-  activeAccountId?: number;
-  
-  // Deprecated
-  lateral?: string; 
+  headgateIds: string[]; 
+  // Added missing properties referenced in components
+  headgates?: Headgate[];
+  lateral?: string;
   tapNumber?: string;
+  accounts: Account[];
 }
 
 export interface WaterOrder {
@@ -83,11 +77,22 @@ export interface WaterOrder {
   requester: string;
   status: WaterOrderStatus;
   orderType: WaterOrderType;
-  orderDate: string;
+  orderDate: string; // Created date
+  deliveryStartDate: string; // When the water should turn on/off
   requestedAmount: number; // in acre-feet
+  requestedInches?: number; // Calculated from amount
+  lateralId: string;
+  // Added missing properties referenced in components
+  lateral?: string;
+  headgateId: string;
+  tapNumber: string;
   ditchRiderId?: number;
+}
+
+// Added missing WaterBankEntry interface referenced in components/services
+export interface WaterBankEntry {
+  id: string;
+  fieldAssociation?: string;
+  amountAvailable: number;
   lateral: string;
-  serialNumber?: string;
-  deliveryStartDate?: string;
-  tapNumber?: string;
 }
