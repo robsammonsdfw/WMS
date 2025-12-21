@@ -6,13 +6,11 @@ let dbClient;
 async function initSchema(client) {
     console.log("Running Schema Initialization...");
     await client.query(`
-        -- 1. Laterals
         CREATE TABLE IF NOT EXISTS laterals (
             id VARCHAR(255) PRIMARY KEY,
             name VARCHAR(255) NOT NULL
         );
 
-        -- 2. Headgates
         CREATE TABLE IF NOT EXISTS headgates (
             id VARCHAR(255) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -20,7 +18,6 @@ async function initSchema(client) {
             tap_number VARCHAR(50)
         );
 
-        -- 3. Fields
         CREATE TABLE IF NOT EXISTS fields (
             id VARCHAR(255) PRIMARY KEY,
             name VARCHAR(255),
@@ -28,18 +25,16 @@ async function initSchema(client) {
             acres NUMERIC,
             location VARCHAR(255),
             total_water_allocation NUMERIC,
-            water_used NUMERIC,
+            water_used NUMERIC DEFAULT 0,
             owner VARCHAR(255)
         );
 
-        -- 4. Field-Headgate Association
         CREATE TABLE IF NOT EXISTS field_headgates (
-            field_id VARCHAR(255) REFERENCES fields(id),
-            headgate_id VARCHAR(255) REFERENCES headgates(id),
+            field_id VARCHAR(255) REFERENCES fields(id) ON DELETE CASCADE,
+            headgate_id VARCHAR(255) REFERENCES headgates(id) ON DELETE CASCADE,
             PRIMARY KEY (field_id, headgate_id)
         );
 
-        -- 5. Water Orders
         CREATE TABLE IF NOT EXISTS water_orders (
             id VARCHAR(255) PRIMARY KEY,
             field_id VARCHAR(255) REFERENCES fields(id),
@@ -55,7 +50,6 @@ async function initSchema(client) {
             tap_number VARCHAR(50)
         );
 
-        -- 6. Accounts
         CREATE TABLE IF NOT EXISTS accounts (
             id SERIAL PRIMARY KEY,
             account_number VARCHAR(255) UNIQUE NOT NULL,
@@ -64,8 +58,8 @@ async function initSchema(client) {
         );
 
         CREATE TABLE IF NOT EXISTS field_accounts (
-            field_id VARCHAR(255) REFERENCES fields(id), 
-            account_id INT REFERENCES accounts(id),
+            field_id VARCHAR(255) REFERENCES fields(id) ON DELETE CASCADE, 
+            account_id INT REFERENCES accounts(id) ON DELETE CASCADE,
             allocation_for_field NUMERIC(10, 2) DEFAULT 0,
             usage_for_field NUMERIC(10, 2) DEFAULT 0,
             is_active BOOLEAN DEFAULT FALSE,
@@ -109,25 +103,21 @@ exports.handler = async (event) => {
 
     const headers = { ...corsHeaders, "Content-Type": "application/json" };
     
-    // Improved Path Normalization
     let path = event.path || "";
-    // Remove stage prefix if present
-    if (path.startsWith('/v1')) {
-        path = path.substring(3);
-    }
-    // Remove trailing slashes
-    if (path.length > 1 && path.endsWith('/')) {
-        path = path.slice(0, -1);
-    }
-
     const httpMethod = event.httpMethod;
+    console.log(`Request: ${httpMethod} ${path}`);
+
+    if (path.startsWith('/v1/')) {
+        path = path.substring(3);
+    } else if (path === '/v1') {
+        path = '/';
+    }
 
     let client;
     try { 
         client = await getDbClient(); 
     } catch (e) { 
-        console.error("Database connection failed:", e);
-        return { statusCode: 500, headers, body: JSON.stringify({ message: "DB Connect Failed" }) }; 
+        return { statusCode: 500, headers, body: JSON.stringify({ message: "DB Connect Failed", error: e.message }) }; 
     }
 
     try {
@@ -136,11 +126,7 @@ exports.handler = async (event) => {
         if (path === '/admin/reset-db' && httpMethod === 'POST') {
             await client.query("DROP TABLE IF EXISTS field_accounts, field_headgates, water_orders, headgates, laterals, fields, accounts CASCADE");
             await initSchema(client);
-            await client.query("INSERT INTO laterals (id, name) VALUES ('L-A', 'Lateral A'), ('L-B', 'Lateral B')");
-            await client.query(`INSERT INTO headgates (id, name, lateral_id, tap_number) VALUES ('HG-A1', 'A-North Gate', 'L-A', 'A-101'), ('HG-B1', 'B-Main Gate', 'L-B', 'B-201')`);
-            await client.query(`INSERT INTO fields (id, name, crop, acres, total_water_allocation, water_used) VALUES ('F-01', 'North Meadows', 'Alfalfa', 120, 480, 150), ('F-02', 'River Bend', 'Corn', 80, 320, 40)`);
-            await client.query("INSERT INTO field_headgates (field_id, headgate_id) VALUES ('F-01', 'HG-A1'), ('F-02', 'HG-B1')");
-            return { statusCode: 200, headers, body: JSON.stringify({ message: "Seeded" }) };
+            return { statusCode: 200, headers, body: JSON.stringify({ message: "Database Cleaned" }) };
         }
 
         if (path === '/laterals') {
@@ -165,6 +151,30 @@ exports.handler = async (event) => {
             }
         }
 
+        if (path === '/fields') {
+            if (httpMethod === 'GET') {
+                const res = await client.query(`
+                    SELECT f.*, array_agg(fh.headgate_id) as headgate_ids 
+                    FROM fields f 
+                    LEFT JOIN field_headgates fh ON f.id = fh.field_id 
+                    GROUP BY f.id
+                `);
+                return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
+            }
+            if (httpMethod === 'POST') {
+                await client.query(
+                    "INSERT INTO fields (id, name, crop, acres, location, total_water_allocation, owner) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    [body.id, body.name, body.crop, body.acres, body.location, body.totalWaterAllocation, body.owner]
+                );
+                if (body.headgateIds && Array.isArray(body.headgateIds)) {
+                    for (const hgId of body.headgateIds) {
+                        await client.query("INSERT INTO field_headgates (field_id, headgate_id) VALUES ($1, $2)", [body.id, hgId]);
+                    }
+                }
+                return { statusCode: 201, headers, body: JSON.stringify(body) };
+            }
+        }
+
         if (path === '/orders') {
             if (httpMethod === 'GET') {
                 const res = await client.query("SELECT o.*, l.name as lateral_name, h.name as headgate_name FROM water_orders o LEFT JOIN laterals l ON o.lateral_id = l.id LEFT JOIN headgates h ON o.headgate_id = h.id ORDER BY delivery_start_date ASC");
@@ -185,16 +195,6 @@ exports.handler = async (event) => {
             const orderId = path.split('/').pop();
             await client.query("UPDATE water_orders SET status = $1 WHERE id = $2", [body.status, orderId]);
             return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
-        }
-
-        if (path === '/fields' && httpMethod === 'GET') {
-            const res = await client.query(`
-                SELECT f.*, array_agg(fh.headgate_id) as headgate_ids 
-                FROM fields f 
-                LEFT JOIN field_headgates fh ON f.id = fh.field_id 
-                GROUP BY f.id
-            `);
-            return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
         }
 
         return { statusCode: 404, headers, body: JSON.stringify({ message: `Route not found: ${httpMethod} ${path}` }) };

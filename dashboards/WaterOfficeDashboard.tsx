@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { WaterOrder, WaterOrderStatus, User, Lateral, Headgate, UserRole, WaterOrderType } from '../types';
+import { WaterOrder, WaterOrderStatus, User, Lateral, Headgate, UserRole, WaterOrderType, Field } from '../types';
 import WaterOrderList from '../components/WaterOrderList';
 import DashboardCard from '../components/DashboardCard';
 import { 
@@ -10,8 +10,8 @@ import {
     XCircleIcon, PlusIcon, TrashIcon 
 } from '../components/icons';
 import { 
-    updateWaterOrder, getLaterals, getHeadgates, 
-    createLateral, createHeadgate, resetDatabase 
+    updateWaterOrder, getLaterals, getHeadgates, getFields,
+    createLateral, createHeadgate, createField, resetDatabase 
 } from '../services/api';
 import { USERS } from '../constants';
 
@@ -27,23 +27,37 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   const [selectedRider, setSelectedRider] = useState<User | null>(null);
   const [laterals, setLaterals] = useState<Lateral[]>([]);
   const [headgates, setHeadgates] = useState<Headgate[]>([]);
+  const [fields, setFields] = useState<Field[]>([]);
   const [reportDateRange, setReportDateRange] = useState<'day' | 'week' | 'month'>('week');
   const [isLoading, setIsLoading] = useState(true);
   
-  // Admin form state
+  // Admin form state: Laterals
   const [newLatId, setNewLatId] = useState('');
   const [newLatName, setNewLatName] = useState('');
+
+  // Admin form state: Headgates
   const [newHGId, setNewHGId] = useState('');
   const [newHGName, setNewHGName] = useState('');
   const [newHGLat, setNewHGLat] = useState('');
   const [newHGTap, setNewHGTap] = useState('');
 
+  // Admin form state: Fields
+  const [newFieldId, setNewFieldId] = useState('');
+  const [newFieldName, setNewFieldName] = useState('');
+  const [newFieldCrop, setNewFieldCrop] = useState('');
+  const [newFieldAcres, setNewFieldAcres] = useState('');
+  const [newFieldOwner, setNewFieldOwner] = useState('');
+  const [newFieldLoc, setNewFieldLoc] = useState('');
+  const [newFieldAlloc, setNewFieldAlloc] = useState('');
+  const [newFieldHGs, setNewFieldHGs] = useState<string[]>([]);
+
   const fetchData = async () => {
     setIsLoading(true);
     try {
-        const [l, h] = await Promise.all([getLaterals(), getHeadgates()]);
+        const [l, h, f] = await Promise.all([getLaterals(), getHeadgates(), getFields()]);
         setLaterals(l);
         setHeadgates(h);
+        setFields(f);
     } catch (e) {
         console.error("Failed to load admin data", e);
     } finally {
@@ -58,22 +72,17 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   const ditchRiders = useMemo(() => USERS.filter(u => u.role === UserRole.DitchRider), []);
   const featuredRiders = ditchRiders.slice(0, 3);
 
-  // REAL-TIME CALCULATIONS: Miner's Inches by Lateral
-  // 1 AF = 25 Miner's Inches
   const lateralReportData = useMemo(() => {
     const data: Record<string, { name: string, inches: number, count: number }> = {};
-    
     laterals.forEach(l => {
         data[l.id] = { name: l.name, inches: 0, count: 0 };
     });
-
     waterOrders.forEach(o => {
         if (data[o.lateralId]) {
             data[o.lateralId].inches += (o.requestedAmount || 0) * 25;
             data[o.lateralId].count += 1;
         }
     });
-
     return Object.values(data);
   }, [waterOrders, laterals, reportDateRange]);
 
@@ -91,8 +100,9 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
       if (!newLatId || !newLatName) return;
       try {
           await createLateral({ id: newLatId, name: newLatName });
-          setLaterals(prev => [...prev, { id: newLatId, name: newLatName }]);
           setNewLatId(''); setNewLatName('');
+          await fetchData();
+          alert("Lateral registered successfully.");
       } catch (err: any) { alert(err.message); }
   };
 
@@ -104,8 +114,29 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
       }
       try {
           await createHeadgate({ id: newHGId, name: newHGName, lateralId: newHGLat, tapNumber: newHGTap });
-          setHeadgates(prev => [...prev, { id: newHGId, name: newHGName, lateralId: newHGLat, tapNumber: newHGTap }]);
           setNewHGId(''); setNewHGName(''); setNewHGLat(''); setNewHGTap('');
+          await fetchData();
+          alert("Headgate registered successfully.");
+      } catch (err: any) { alert(err.message); }
+  };
+
+  const handleAddField = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newFieldId || !newFieldName) return;
+      try {
+          await createField({ 
+              id: newFieldId, 
+              name: newFieldName, 
+              crop: newFieldCrop, 
+              acres: parseFloat(newFieldAcres) || 0,
+              location: newFieldLoc,
+              totalWaterAllocation: parseFloat(newFieldAlloc) || 0,
+              owner: newFieldOwner,
+              headgateIds: newFieldHGs
+          });
+          setNewFieldId(''); setNewFieldName(''); setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldLoc(''); setNewFieldAlloc(''); setNewFieldHGs([]);
+          await fetchData();
+          alert("Field registered and linked successfully.");
       } catch (err: any) { alert(err.message); }
   };
 
@@ -142,20 +173,13 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
             />
         </div>
 
-        {/* Real-time Order Reporting by Lateral */}
         <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
                 <div>
                     <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Water Orders by Lateral</h3>
                     <p className="text-sm text-gray-500">Total requested Miner's Inches per distribution channel</p>
                 </div>
-                <div className="flex bg-gray-100 rounded-xl p-1 text-xs font-bold border border-gray-200">
-                    <button onClick={() => setReportDateRange('day')} className={`px-4 py-2 rounded-lg transition-all ${reportDateRange === 'day' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Today</button>
-                    <button onClick={() => setReportDateRange('week')} className={`px-4 py-2 rounded-lg transition-all ${reportDateRange === 'week' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>This Week</button>
-                    <button onClick={() => setReportDateRange('month')} className={`px-4 py-2 rounded-lg transition-all ${reportDateRange === 'month' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>This Month</button>
-                </div>
             </div>
-            
             <div className="h-[350px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={lateralReportData}>
@@ -211,7 +235,6 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                 <button onClick={() => setSelectedRider(null)} className="mb-6 flex items-center text-blue-600 hover:text-blue-800 font-black text-sm uppercase tracking-widest group">
                     <span className="mr-2 group-hover:-translate-x-1 transition-transform text-lg">←</span> Back to Personnel List
                 </button>
-                
                 <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
                     <div className="flex flex-col sm:flex-row items-center justify-between mb-10 pb-8 border-b border-gray-100 gap-6">
                         <div className="flex items-center space-x-6 text-center sm:text-left">
@@ -223,91 +246,41 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                                 <p className="text-gray-400 font-black uppercase text-xs tracking-[0.3em] mt-2">Ditch Rider #00{selectedRider.id}</p>
                             </div>
                         </div>
-                        <div className="bg-green-50 px-6 py-3 rounded-2xl border border-green-200">
-                            <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">Shift Status</p>
-                            <p className="text-sm font-black text-green-700">ACTIVE ON RUN</p>
-                        </div>
                     </div>
-
                     <div className="space-y-10">
-                        <div>
-                            <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6 flex items-center">
-                                <span className="w-2.5 h-8 bg-blue-600 rounded-full mr-4"></span>
-                                Current Assigned Run (By Lateral)
-                            </h3>
-                            {groupedRun.length === 0 ? (
-                                <div className="p-16 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-                                    <ClockIcon className="h-12 w-12 text-gray-300 mx-auto mb-4"/>
-                                    <p className="text-gray-500 font-black text-lg uppercase tracking-tight">No Active Tasks</p>
-                                    <p className="text-gray-400 text-sm mt-1">Assignments will appear here once orders are approved.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-8">
-                                    {groupedRun.map(lat => (
-                                        <div key={lat.id} className="bg-gray-50 rounded-3xl overflow-hidden border border-gray-200 shadow-sm transition-all hover:shadow-md">
-                                            <div className="bg-gray-900 px-8 py-4 flex justify-between items-center">
-                                                <span className="font-black text-white uppercase text-sm tracking-[0.2em]">{lat.name}</span>
-                                                <span className="text-[10px] bg-white/10 text-white/70 px-3 py-1 rounded-full font-black uppercase">{lat.orders.length} Tasks</span>
+                        <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6 flex items-center">
+                            <span className="w-2.5 h-8 bg-blue-600 rounded-full mr-4"></span>
+                            Current Assigned Run (By Lateral)
+                        </h3>
+                        <div className="space-y-8">
+                            {groupedRun.map(lat => (
+                                <div key={lat.id} className="bg-gray-50 rounded-3xl overflow-hidden border border-gray-200">
+                                    <div className="bg-gray-900 px-8 py-4 flex justify-between items-center text-white">
+                                        <span className="font-black uppercase text-sm">{lat.name}</span>
+                                        <span className="text-[10px] font-black uppercase">{lat.orders.length} Tasks</span>
+                                    </div>
+                                    <div className="divide-y divide-gray-200">
+                                        {lat.orders.map(o => (
+                                            <div key={o.id} className="p-6 hover:bg-white transition-colors">
+                                                <h4 className="text-xl font-black text-gray-900">{o.fieldName}</h4>
+                                                <p className="text-sm text-gray-500 font-bold uppercase">Tap: {o.tapNumber}</p>
                                             </div>
-                                            <div className="divide-y divide-gray-200">
-                                                {lat.orders.map(o => (
-                                                    <div key={o.id} className="p-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-8 hover:bg-white transition-colors">
-                                                        <div className="space-y-2">
-                                                            <div className="flex items-center gap-3">
-                                                                <h4 className="text-2xl font-black text-gray-900">{o.fieldName}</h4>
-                                                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${o.orderType === WaterOrderType.TurnOn ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                                    {o.orderType}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-500 font-bold uppercase tracking-tight">
-                                                                <p>Tap: <span className="font-mono text-gray-900">{o.tapNumber}</span></p>
-                                                                <p>Status: <span className="text-blue-600 italic">{o.status}</span></p>
-                                                            </div>
-                                                        </div>
-                                                        <div className="grid grid-cols-2 gap-12 text-right">
-                                                            <div>
-                                                                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">Inches</p>
-                                                                <p className="text-3xl font-black text-blue-700">{(o.requestedAmount * 25).toFixed(0)}</p>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">Target Date</p>
-                                                                <p className="text-base font-black text-gray-900">{o.deliveryStartDate}</p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
-                            )}
+                            ))}
                         </div>
                     </div>
                 </div>
             </div>
         );
     }
-
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in duration-300">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {ditchRiders.map(rider => (
-                <div key={rider.id} onClick={() => setSelectedRider(rider)} className="group bg-white p-8 rounded-3xl shadow-lg border-b-[12px] border-blue-600 cursor-pointer hover:shadow-2xl transition-all hover:-translate-y-2 relative overflow-hidden">
-                    <div className="absolute -top-6 -right-6 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <UserGroupIcon className="h-32 w-32 text-blue-900" />
-                    </div>
-                    <div className="flex justify-between items-start mb-8">
-                        <div className="bg-blue-50 p-4 rounded-2xl"><UserGroupIcon className="h-6 w-6 text-blue-600"/></div>
-                        <div className="flex flex-col items-end">
-                            <span className="text-[10px] font-black px-3 py-1 bg-green-100 text-green-700 rounded-full uppercase tracking-widest">Active</span>
-                            <span className="text-[9px] text-gray-400 font-black mt-1 uppercase tracking-tighter">On System</span>
-                        </div>
-                    </div>
-                    <h3 className="text-3xl font-black text-gray-900 group-hover:text-blue-700 transition-colors">{rider.name}</h3>
-                    <p className="text-xs text-gray-400 font-black uppercase tracking-[0.2em] mt-2">Personnel ID: 00{rider.id}</p>
-                    <div className="mt-10 pt-8 border-t border-gray-50 flex justify-between items-center text-[10px] font-black text-gray-500 uppercase tracking-widest">
-                        <span>Current Tasks: 4</span>
-                        <span className="text-blue-600 group-hover:translate-x-2 transition-transform">Run Logs →</span>
-                    </div>
+                <div key={rider.id} onClick={() => setSelectedRider(rider)} className="bg-white p-8 rounded-3xl shadow-lg border-b-[12px] border-blue-600 cursor-pointer hover:-translate-y-2 transition-all">
+                    <h3 className="text-3xl font-black text-gray-900">{rider.name}</h3>
+                    <p className="text-xs text-gray-400 font-black uppercase tracking-[0.2em] mt-2">Ditch Rider</p>
                 </div>
             ))}
         </div>
@@ -315,93 +288,124 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   };
 
   const renderAdmin = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 animate-in slide-in-from-bottom-6 duration-300">
-        {/* Lateral Manager */}
-        <div className="bg-white p-10 rounded-3xl shadow-xl border border-gray-100">
-            <div className="flex items-center mb-10">
-                <div className="bg-blue-600 p-4 rounded-2xl mr-5 text-white shadow-lg shadow-blue-100"><DocumentReportIcon className="h-8 w-8"/></div>
-                <div>
-                    <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Laterals</h3>
-                    <p className="text-sm text-gray-500 font-medium">Define main distribution channels</p>
+    <div className="space-y-12 animate-in slide-in-from-bottom-6 duration-300">
+        
+        {/* ROW 1: Laterals & Headgates */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            {/* Lateral Manager */}
+            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+                <div className="flex items-center mb-8">
+                    <div className="bg-blue-600 p-3 rounded-xl mr-4 text-white"><DocumentReportIcon className="h-6 w-6"/></div>
+                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">1. Lateral Registry</h3>
+                </div>
+                <form onSubmit={handleAddLateral} className="space-y-4 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Lateral ID (e.g. L-1)" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                        <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-all">Add Lateral</button>
+                </form>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    {laterals.map(l => (
+                        <div key={l.id} className="flex justify-between items-center p-4 bg-white rounded-xl border border-gray-200">
+                            <span className="font-black text-gray-800">{l.id}: {l.name}</span>
+                        </div>
+                    ))}
                 </div>
             </div>
-            
-            <form onSubmit={handleAddLateral} className="space-y-6 mb-10 bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">System ID</label>
-                        <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="e.g. L-1" className="w-full px-5 py-3 border border-gray-300 rounded-xl focus:ring-4 focus:ring-blue-100 outline-none font-bold transition-all" />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Lateral Name</label>
-                        <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="e.g. North Lateral" className="w-full px-5 py-3 border border-gray-300 rounded-xl focus:ring-4 focus:ring-blue-100 outline-none font-bold transition-all" />
-                    </div>
-                </div>
-                <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-xl font-black uppercase tracking-[0.2em] text-xs hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">Register Lateral</button>
-            </form>
 
-            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {laterals.map(l => (
-                    <div key={l.id} className="flex justify-between items-center p-6 bg-white rounded-2xl border border-gray-200 hover:border-blue-200 transition-all shadow-sm group">
-                        <div className="flex items-center">
-                            <span className="w-10 h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl font-black text-xs mr-5">{l.id.substr(0,2)}</span>
-                            <span className="font-black text-gray-800 tracking-tight text-lg">{l.name}</span>
-                        </div>
-                        <button className="p-3 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"><TrashIcon className="h-6 w-6"/></button>
+            {/* Headgate Manager */}
+            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+                <div className="flex items-center mb-8">
+                    <div className="bg-green-600 p-3 rounded-xl mr-4 text-white"><RefreshIcon className="h-6 w-6"/></div>
+                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">2. Headgate Registry</h3>
+                </div>
+                <form onSubmit={handleAddHeadgate} className="space-y-4 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID (e.g. HG-101)" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                        <input value={newHGName} onChange={e => setNewHGName(e.target.value)} placeholder="Gate Name" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
                     </div>
-                ))}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white font-bold">
+                            <option value="">Select Lateral...</option>
+                            {laterals.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        </select>
+                        <input value={newHGTap} onChange={e => setNewHGTap(e.target.value)} placeholder="Tap # Reference" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <button type="submit" className="w-full bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700 transition-all">Add Headgate</button>
+                </form>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    {headgates.map(h => (
+                        <div key={h.id} className="p-4 bg-white rounded-xl border border-gray-200 flex justify-between">
+                            <span className="font-black text-gray-800">{h.name} ({h.id})</span>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">Tap {h.tapNumber}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
 
-        {/* Headgate Manager */}
-        <div className="bg-white p-10 rounded-3xl shadow-xl border border-gray-100">
-            <div className="flex items-center mb-10">
-                <div className="bg-green-600 p-4 rounded-2xl mr-5 text-white shadow-lg shadow-green-100"><RefreshIcon className="h-8 w-8"/></div>
-                <div>
-                    <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Headgates</h3>
-                    <p className="text-sm text-gray-500 font-medium">Link endpoints to lateral channels</p>
-                </div>
+        {/* ROW 2: Field Manager */}
+        <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+            <div className="flex items-center mb-8">
+                <div className="bg-indigo-600 p-3 rounded-xl mr-4 text-white"><UserGroupIcon className="h-6 w-6"/></div>
+                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">3. Field Registry & Infrastructure Link</h3>
             </div>
-
-            <form onSubmit={handleAddHeadgate} className="space-y-6 mb-10 bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Gate ID</label>
-                        <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="HG-101" className="w-full px-5 py-3 border border-gray-300 rounded-xl focus:ring-4 focus:ring-green-100 outline-none font-bold" />
+            <form onSubmit={handleAddField} className="space-y-6 bg-gray-50 p-8 rounded-3xl border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Field ID</label>
+                        <input value={newFieldId} onChange={e => setNewFieldId(e.target.value)} placeholder="F-001" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
                     </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Gate Name</label>
-                        <input value={newHGName} onChange={e => setNewHGName(e.target.value)} placeholder="East Main" className="w-full px-5 py-3 border border-gray-300 rounded-xl focus:ring-4 focus:ring-green-100 outline-none font-bold" />
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Display Name</label>
+                        <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="North Ranch" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Primary Crop</label>
+                        <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Alfalfa" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
                     </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Parent Lateral</label>
-                        <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="w-full px-5 py-3 border border-gray-300 rounded-xl focus:ring-4 focus:ring-green-100 outline-none bg-white font-bold">
-                            <option value="">Choose Lateral...</option>
-                            {laterals.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Total Acres</label>
+                        <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="160" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner/Farmer Name</label>
+                        <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="John Doe" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Season Allocation (AF)</label>
+                        <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="640" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Assign Headgate(s)</label>
+                        <select 
+                            multiple 
+                            value={newFieldHGs} 
+                            onChange={e => {
+                                const values = Array.from(e.target.selectedOptions, option => option.value);
+                                setNewFieldHGs(values);
+                            }}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-xl bg-white font-bold h-[48px] overflow-y-auto"
+                        >
+                            {headgates.map(h => <option key={h.id} value={h.id}>{h.name} (Lat: {h.lateral_name})</option>)}
                         </select>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Tap Ref #</label>
-                        <input value={newHGTap} onChange={e => setNewHGTap(e.target.value)} placeholder="T-1234" className="w-full px-5 py-3 border border-gray-300 rounded-xl focus:ring-4 focus:ring-green-100 outline-none font-bold" />
+                        <p className="text-[9px] text-gray-400 mt-1 italic">*Hold Ctrl/Cmd to select multiple</p>
                     </div>
                 </div>
-                <button type="submit" className="w-full bg-green-600 text-white py-4 rounded-xl font-black uppercase tracking-[0.2em] text-xs hover:bg-green-700 shadow-xl shadow-green-100 transition-all active:scale-95">Register Headgate</button>
+                <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all">Register Field Assets</button>
             </form>
-
-            <div className="space-y-4 max-h-[310px] overflow-y-auto pr-2 custom-scrollbar">
-                {headgates.map(h => (
-                    <div key={h.id} className="p-6 bg-white rounded-2xl border border-gray-200 hover:border-green-200 transition-all shadow-sm">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className="font-black text-gray-900 text-lg tracking-tight">{h.name}</span>
-                            <span className="text-[10px] bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-black uppercase tracking-widest">
-                                {laterals.find(l => l.id === h.lateralId)?.name || 'UNKNOWN'}
-                            </span>
-                        </div>
-                        <div className="flex items-center text-[10px] text-gray-400 font-black uppercase tracking-[0.2em]">
-                            <span className="mr-5">Gate ID: {h.id}</span>
-                            <span>Tap: {h.tapNumber}</span>
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {fields.map(f => (
+                    <div key={f.id} className="p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                        <p className="font-black text-gray-900 leading-tight">{f.name}</p>
+                        <p className="text-[10px] font-bold text-indigo-600 uppercase mt-1">{f.owner}</p>
+                        <div className="mt-3 flex gap-1 flex-wrap">
+                            {(f.headgate_ids || []).map(hg => (
+                                <span key={hg} className="text-[8px] bg-gray-100 px-1.5 py-0.5 rounded font-black text-gray-500">{hg}</span>
+                            ))}
                         </div>
                     </div>
                 ))}

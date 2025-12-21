@@ -1,5 +1,6 @@
 
 
+
 export enum UserRole {
   WaterManager = 'Water Manager',
   WaterOffice = 'Water Office',
@@ -39,6 +40,8 @@ export interface Headgate {
   name: string;
   lateralId: string;
   lateral?: string;
+  // Fix: Added lateral_name to match the backend's "SELECT h.*, l.name as lateral_name" response structure
+  lateral_name?: string;
   tapNumber: string;
 }
 
@@ -63,6 +66,8 @@ export interface Field {
   waterUsed: number;
   owner?: string; 
   headgateIds: string[]; 
+  // Fix: Added headgate_ids to match the backend's "array_agg(fh.headgate_id) as headgate_ids" response structure
+  headgate_ids?: string[];
   // Added missing properties referenced in components
   headgates?: Headgate[];
   lateral?: string;

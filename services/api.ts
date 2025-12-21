@@ -65,8 +65,11 @@ export const createWaterOrder = (orderData: Partial<WaterOrder>): Promise<WaterO
 export const updateWaterOrder = (orderId: string, orderData: Partial<WaterOrder>): Promise<WaterOrder> => apiFetch(`/orders/${orderId}`, { method: 'PUT', body: JSON.stringify(orderData) });
 
 export const getFields = (): Promise<Field[]> => apiFetch('/fields');
+export const createField = (data: Partial<Field> & { headgateIds?: string[] }): Promise<Field> => apiFetch('/fields', { method: 'POST', body: JSON.stringify(data) });
+
 export const getLaterals = (): Promise<Lateral[]> => apiFetch('/laterals');
 export const createLateral = (data: Partial<Lateral>): Promise<Lateral> => apiFetch('/laterals', { method: 'POST', body: JSON.stringify(data) });
+
 export const getHeadgates = (): Promise<Headgate[]> => apiFetch('/headgates');
 export const createHeadgate = (data: Partial<Headgate>): Promise<Headgate> => apiFetch('/headgates', { method: 'POST', body: JSON.stringify(data) });
 
