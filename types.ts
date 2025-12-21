@@ -21,6 +21,12 @@ export enum WaterOrderStatus {
   AwaitingApproval = 'Awaiting Approval',
 }
 
+export enum WaterOrderType {
+  TurnOn = 'Turn On-Delivery',
+  TurnOff = 'Turn Off',
+  Update = 'Update-Delivery',
+}
+
 export interface Headgate {
   id: number;
   lateral: string;
@@ -76,6 +82,7 @@ export interface WaterOrder {
   fieldName: string;
   requester: string;
   status: WaterOrderStatus;
+  orderType: WaterOrderType;
   orderDate: string;
   requestedAmount: number; // in acre-feet
   ditchRiderId?: number;

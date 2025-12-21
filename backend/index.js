@@ -26,13 +26,13 @@ async function initSchema(client) {
         );
 
         -- 2. Water Orders Table
-        -- Note: status is VARCHAR to be flexible, preventing ENUM issues during development
         CREATE TABLE IF NOT EXISTS water_orders (
             id VARCHAR(255) PRIMARY KEY,
             field_id VARCHAR(255),
             field_name VARCHAR(255),
             requester VARCHAR(255),
             status VARCHAR(50), 
+            order_type VARCHAR(50),
             order_date TIMESTAMP,
             requested_amount NUMERIC,
             ditch_rider_id INT,
@@ -41,6 +41,8 @@ async function initSchema(client) {
             delivery_start_date DATE,
             tap_number VARCHAR(50)
         );
+        -- Self-heal: Ensure order_type column exists
+        ALTER TABLE water_orders ADD COLUMN IF NOT EXISTS order_type VARCHAR(50);
 
         -- 3. Accounts Table
         CREATE TABLE IF NOT EXISTS accounts (
@@ -239,7 +241,6 @@ exports.handler = async (event) => {
             console.log("RESETTING DATABASE...");
             
             // 1. DROP ALL TABLES & TYPES (Aggressive Cleanup)
-            // We run these individually to ensure no lingering locks or dependency issues block the reset.
             await queryDb("DROP TRIGGER IF EXISTS trigger_check_usage_limit ON field_accounts");
             await queryDb("DROP FUNCTION IF EXISTS check_usage_limit");
             await queryDb("DROP VIEW IF EXISTS water_bank_view CASCADE");
@@ -248,8 +249,6 @@ exports.handler = async (event) => {
             await queryDb("DROP TABLE IF EXISTS water_orders CASCADE");
             await queryDb("DROP TABLE IF EXISTS accounts CASCADE");
             await queryDb("DROP TABLE IF EXISTS fields CASCADE");
-            
-            // Drop the specific ENUM type that was causing the error
             await queryDb("DROP TYPE IF EXISTS water_order_status CASCADE");
             
             console.log("Database cleared. Re-initializing schema...");
@@ -289,7 +288,6 @@ exports.handler = async (event) => {
                 INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
                 SELECT 'F002', id, 320.0, 100.0, TRUE FROM accounts WHERE account_number = 'ACC-PROV-01'
             `);
-            // Trigger Alert on F003
             await queryDb(`
                 INSERT INTO field_accounts (field_id, account_id, allocation_for_field, usage_for_field, is_active)
                 SELECT 'F003', id, 600.0, 450.0, TRUE FROM accounts WHERE account_number = 'ACC-MILL-01'
@@ -310,12 +308,11 @@ exports.handler = async (event) => {
              const dayAgo = new Date(now.getTime() - 86400000).toISOString();
              const tenDaysAgo = new Date(now.getTime() - 864000000).toISOString();
              
-             // IMPORTANT: Using "In Progress" (with space) to match Frontend Types
              await queryDb(`
-                INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, "lateral", delivery_start_date)
+                INSERT INTO water_orders (id, field_id, field_name, requester, status, order_type, order_date, requested_amount, "lateral", delivery_start_date)
                 VALUES
-                ('ORD-101', 'F001', 'North Field 1', 'Mike Beus', 'Completed', '${tenDaysAgo}', 24.0, 'A', '${tenDaysAgo}'),
-                ('ORD-102', 'F003', 'East Ridge', 'Mike Beus', 'In Progress', '${dayAgo}', 36.0, 'B', '${dayAgo}')
+                ('ORD-101', 'F001', 'North Field 1', 'Mike Beus', 'Completed', 'Turn On-Delivery', '${tenDaysAgo}', 24.0, 'A', '${tenDaysAgo}'),
+                ('ORD-102', 'F003', 'East Ridge', 'Mike Beus', 'In Progress', 'Turn On-Delivery', '${dayAgo}', 36.0, 'B', '${dayAgo}')
             `);
 
             return { statusCode: 200, headers, body: JSON.stringify({ message: "Database Reset and Seeded Successfully" }) };
@@ -330,6 +327,7 @@ exports.handler = async (event) => {
                 fieldName: row.field_name,
                 requester: row.requester,
                 status: row.status,
+                orderType: row.order_type,
                 orderDate: row.order_date,
                 requestedAmount: parseFloat(row.requested_amount),
                 ditchRiderId: row.ditch_rider_id,
@@ -348,9 +346,9 @@ exports.handler = async (event) => {
             const now = new Date().toISOString();
             
             await queryDb(
-                `INSERT INTO water_orders (id, field_id, field_name, requester, status, order_date, requested_amount, "lateral", delivery_start_date, tap_number) 
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-                [id, data.fieldId, data.fieldName, data.requester, data.status, now, data.requestedAmount, data.lateral, data.deliveryStartDate, data.tapNumber]
+                `INSERT INTO water_orders (id, field_id, field_name, requester, status, order_type, order_date, requested_amount, "lateral", delivery_start_date, tap_number) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                [id, data.fieldId, data.fieldName, data.requester, data.status, data.orderType, now, data.requestedAmount, data.lateral, data.deliveryStartDate, data.tapNumber]
             );
 
             console.log("Order created successfully with ID:", id);

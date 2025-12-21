@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Field, WaterOrder, WaterOrderStatus } from '../types';
+import { User, Field, WaterOrder, WaterOrderStatus, WaterOrderType } from '../types';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
 import SeasonStatistics from '../components/SeasonStatistics';
@@ -64,7 +64,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
   const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
 
-  const handleManualOrderCreate = async (formData: { fieldId: string; requestedAmount: number; deliveryStartDate: string; }) => {
+  const handleManualOrderCreate = async (formData: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; }) => {
     const field = fields.find(f => f.id === formData.fieldId);
     if (!field) {
         alert('Selected field not found.');
@@ -80,6 +80,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         fieldName: field.name,
         requester: user.name,
         status: WaterOrderStatus.Pending,
+        orderType: formData.orderType,
         deliveryStartDate: formData.deliveryStartDate,
         requestedAmount: formData.requestedAmount,
         lateral: lateral,
@@ -91,7 +92,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         await refreshWaterOrders();
         setIsNewOrderModalOpen(false);
         setCreateOrderInitialFieldId(undefined);
-        alert(`New water order for ${field.name} has been created and sent for approval.`);
+        alert(`New ${formData.orderType} order for ${field.name} has been created and sent for approval.`);
     } catch (error: any) {
         alert(error.message || error);
     }
@@ -143,6 +144,21 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       Review & Submit
     </button>
   );
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return 'Asap';
+    try {
+        // Handle ISO strings (2025-12-09T00...) or simple dates (2025-12-09)
+        const cleanDate = dateStr.split('T')[0];
+        const [year, month, day] = cleanDate.split('-');
+        if (year && month && day) {
+            return `${month}-${day}-${year}`;
+        }
+        return cleanDate;
+    } catch (e) {
+        return dateStr;
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -265,7 +281,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                             </span>
                                             {pendingOrder && (
                                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRunning ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
-                                                    Pending: {pendingOrder.deliveryStartDate || 'Asap'}
+                                                    Pending: {formatDate(pendingOrder.deliveryStartDate)}
                                                 </span>
                                             )}
                                         </div>

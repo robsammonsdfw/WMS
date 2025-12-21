@@ -1,17 +1,18 @@
 
 import React, { useState, useMemo } from 'react';
-import { Field } from '../types';
+import { Field, WaterOrderType } from '../types';
 import { XCircleIcon, DocumentAddIcon } from './icons';
 
 interface NewWaterOrderModalProps {
   onClose: () => void;
-  onOrderCreate: (data: { fieldId: string; requestedAmount: number; deliveryStartDate: string; }) => void;
+  onOrderCreate: (data: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; }) => void;
   fields: Field[];
   initialFieldId?: string;
 }
 
 const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate, fields, initialFieldId }) => {
   const [fieldId, setFieldId] = useState<string>(initialFieldId || '');
+  const [orderType, setOrderType] = useState<WaterOrderType>(WaterOrderType.TurnOn);
   const [inchesRequested, setInchesRequested] = useState<string>('');
   const [deliveryStartDate, setDeliveryStartDate] = useState<string>('');
   const [error, setError] = useState('');
@@ -35,7 +36,7 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
     
     const inches = parseFloat(inchesRequested);
     
-    if (!fieldId || !inchesRequested || inches <= 0 || !deliveryStartDate) {
+    if (!fieldId || !orderType || !inchesRequested || inches <= 0 || !deliveryStartDate) {
       setError('Please fill out all fields with valid information.');
       return;
     }
@@ -50,6 +51,7 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
 
     onOrderCreate({
       fieldId,
+      orderType,
       requestedAmount: parseFloat(amountAF.toFixed(2)),
       deliveryStartDate,
     });
@@ -103,6 +105,20 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
                         ))}
                     </select>
                 )}
+            </div>
+
+            <div>
+                <label htmlFor="orderType" className="block text-sm font-medium text-gray-700">Order Type</label>
+                <select
+                    id="orderType"
+                    value={orderType}
+                    onChange={(e) => setOrderType(e.target.value as WaterOrderType)}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                >
+                    {Object.values(WaterOrderType).map((type) => (
+                        <option key={type} value={type}>{type}</option>
+                    ))}
+                </select>
             </div>
             
             {selectedField && headgateInfo && (

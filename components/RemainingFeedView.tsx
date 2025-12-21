@@ -9,6 +9,22 @@ interface RemainingFeedViewProps {
 }
 
 const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrders, onFieldClick }) => {
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return 'Asap';
+    try {
+        // Handle ISO strings (2025-12-09T00...) or simple dates (2025-12-09)
+        const cleanDate = dateStr.split('T')[0];
+        const [year, month, day] = cleanDate.split('-');
+        if (year && month && day) {
+            return `${month}-${day}-${year}`;
+        }
+        return cleanDate;
+    } catch (e) {
+        return dateStr;
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {fields.map(field => {
@@ -50,7 +66,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
                 // CASE: Water ON, but Pending Order exists (Pending Turn Off/Switch)
                 pendingBadge = (
                      <div className="mt-1 inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-100 text-red-800 border border-red-300 shadow-sm">
-                        PENDING: {pendingOrder.deliveryStartDate || 'Asap'}
+                        PENDING: {formatDate(pendingOrder.deliveryStartDate)}
                     </div>
                 );
             }
@@ -70,7 +86,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
                 // User Requirement: "PENDING" badge is White/Blue for high visibility.
                 pendingBadge = (
                      <div className="mt-1 inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-white text-blue-800 border-2 border-blue-600 shadow-md animate-pulse">
-                        PENDING START: {pendingOrder.deliveryStartDate || 'Asap'}
+                        PENDING START: {formatDate(pendingOrder.deliveryStartDate)}
                     </div>
                 );
             }
