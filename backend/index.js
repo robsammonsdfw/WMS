@@ -42,7 +42,7 @@ async function initSchema(client) {
         -- 5. Water Orders Table
         CREATE TABLE IF NOT EXISTS water_orders (
             id VARCHAR(255) PRIMARY KEY,
-            field_id VARCHAR(255),
+            field_id VARCHAR(255) REFERENCES fields(id),
             field_name VARCHAR(255),
             requester VARCHAR(255),
             status VARCHAR(50), 
@@ -64,7 +64,7 @@ async function initSchema(client) {
         );
 
         CREATE TABLE IF NOT EXISTS field_accounts (
-            field_id VARCHAR(255), 
+            field_id VARCHAR(255) REFERENCES fields(id), 
             account_id INT REFERENCES accounts(id),
             allocation_for_field NUMERIC(10, 2) DEFAULT 0,
             usage_for_field NUMERIC(10, 2) DEFAULT 0,
@@ -112,52 +112,42 @@ exports.handler = async (event) => {
     const headers = { ...corsHeaders, "Content-Type": "application/json" };
 
     try {
-        // ADMIN: RESET & SEED
         if (path === '/admin/reset-db' && httpMethod === 'POST') {
             await client.query("DROP TABLE IF EXISTS field_accounts, field_headgates, water_orders, headgates, laterals, fields, accounts CASCADE");
             await initSchema(client);
             
-            // Seed Laterals
-            await client.query("INSERT INTO laterals (id, name) VALUES ('L-A', 'Lateral A'), ('L-B', 'Lateral B'), ('L-C', 'Lateral C')");
-            
-            // Seed Headgates
+            await client.query("INSERT INTO laterals (id, name) VALUES ('L-A', 'Lateral A'), ('L-B', 'Lateral B')");
             await client.query(`
                 INSERT INTO headgates (id, name, lateral_id, tap_number) VALUES 
                 ('HG-A1', 'A-North Gate', 'L-A', 'A-101'),
-                ('HG-A2', 'A-South Gate', 'L-A', 'A-102'),
-                ('HG-B1', 'B-Main Gate', 'L-B', 'B-201'),
-                ('HG-C1', 'C-Upper Gate', 'L-C', 'C-301')
+                ('HG-B1', 'B-Main Gate', 'L-B', 'B-201')
             `);
-
-            // Seed Fields
             await client.query(`
                 INSERT INTO fields (id, name, crop, acres, total_water_allocation, water_used) VALUES 
                 ('F-01', 'North Meadows', 'Alfalfa', 120, 480, 150),
                 ('F-02', 'River Bend', 'Corn', 80, 320, 40)
             `);
-
-            // Link Fields to Headgates
             await client.query("INSERT INTO field_headgates (field_id, headgate_id) VALUES ('F-01', 'HG-A1'), ('F-02', 'HG-B1')");
             
-            return { statusCode: 200, headers, body: JSON.stringify({ message: "Database reset and seeded with Laterals and Headgates" }) };
+            return { statusCode: 200, headers, body: JSON.stringify({ message: "Seeded" }) };
         }
 
-        // LATERALS API
         if (path === '/laterals' && httpMethod === 'GET') {
             const res = await client.query("SELECT * FROM laterals ORDER BY name ASC");
             return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
         }
+
         if (path === '/laterals' && httpMethod === 'POST') {
             const data = JSON.parse(body);
             await client.query("INSERT INTO laterals (id, name) VALUES ($1, $2)", [data.id, data.name]);
             return { statusCode: 201, headers, body: JSON.stringify(data) };
         }
 
-        // HEADGATES API
         if (path === '/headgates' && httpMethod === 'GET') {
             const res = await client.query("SELECT h.*, l.name as lateral_name FROM headgates h JOIN laterals l ON h.lateral_id = l.id");
             return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
         }
+
         if (path === '/headgates' && httpMethod === 'POST') {
             const data = JSON.parse(body);
             if (!data.lateralId) return { statusCode: 400, headers, body: JSON.stringify({ message: "Headgates must be assigned to a lateral." }) };
@@ -165,14 +155,13 @@ exports.handler = async (event) => {
             return { statusCode: 201, headers, body: JSON.stringify(data) };
         }
 
-        // ORDERS API
         if (path === '/orders' && httpMethod === 'GET') {
             const res = await client.query(`
                 SELECT o.*, l.name as lateral_name, h.name as headgate_name 
                 FROM water_orders o 
                 LEFT JOIN laterals l ON o.lateral_id = l.id 
                 LEFT JOIN headgates h ON o.headgate_id = h.id 
-                ORDER BY o.delivery_start_date ASC
+                ORDER BY delivery_start_date ASC
             `);
             return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
         }
@@ -205,9 +194,8 @@ exports.handler = async (event) => {
             return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
         }
 
-        return { statusCode: 404, headers, body: "Endpoint Not Found" };
+        return { statusCode: 404, headers, body: "Not Found" };
     } catch (err) {
-        console.error("Handler Error:", err);
         return { statusCode: 500, headers, body: JSON.stringify({ message: err.message }) };
     }
 };
