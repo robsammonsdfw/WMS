@@ -100,19 +100,20 @@ async function getDbClient() {
 exports.handler = async (event) => {
     const corsHeaders = {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-api-key",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Max-Age": "86400"
     };
 
     if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 200, headers: corsHeaders };
+        return { statusCode: 200, headers: corsHeaders, body: '' };
     }
 
     const headers = { ...corsHeaders, "Content-Type": "application/json" };
     
+    // Path normalization: Support /v1/fields and /fields
     let path = event.path || "";
     const httpMethod = event.httpMethod;
-    console.log(`Request: ${httpMethod} ${path}`);
 
     if (path.startsWith('/v1/')) {
         path = path.substring(3);
@@ -124,7 +125,7 @@ exports.handler = async (event) => {
     try { 
         client = await getDbClient(); 
     } catch (e) { 
-        return { statusCode: 500, headers, body: JSON.stringify({ message: "DB Connect Failed", error: e.message }) }; 
+        return { statusCode: 500, headers, body: JSON.stringify({ message: "Database connection failed." }) }; 
     }
 
     try {
@@ -160,7 +161,6 @@ exports.handler = async (event) => {
 
         if (path === '/fields') {
             if (httpMethod === 'GET') {
-                // Improved Query: We resolve the primary lateral_id by looking up the lateral associated with the first linked headgate
                 const res = await client.query(`
                     SELECT f.*, 
                            array_agg(DISTINCT fh.headgate_id) as headgate_ids,
@@ -196,8 +196,6 @@ exports.handler = async (event) => {
             }
             if (httpMethod === 'POST') {
                 const id = 'ORD-' + Math.random().toString(36).substr(2, 5).toUpperCase();
-                
-                // FK handling: if the ID is blank, convert to NULL so Postgres doesn't look for an empty string ID in parent tables
                 const lateralId = (body.lateralId && body.lateralId !== '') ? body.lateralId : null;
                 const headgateId = (body.headgateId && body.headgateId !== '') ? body.headgateId : null;
 
@@ -216,9 +214,9 @@ exports.handler = async (event) => {
             return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
         }
 
-        return { statusCode: 404, headers, body: JSON.stringify({ message: `Route not found: ${httpMethod} ${path}` }) };
+        return { statusCode: 404, headers, body: JSON.stringify({ message: "Request endpoint not found." }) };
     } catch (err) {
         console.error("Handler error:", err);
-        return { statusCode: 500, headers, body: JSON.stringify({ message: err.message }) };
+        return { statusCode: 500, headers, body: JSON.stringify({ message: "Internal server error." }) };
     }
 };

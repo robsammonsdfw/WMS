@@ -1,61 +1,67 @@
 
 import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate } from '../types';
 
-declare global {
-  interface Window {
-    APP_CONFIG?: {
-      API_KEY?: string;
-      API_BASE_URL?: string;
-    };
-  }
-}
-
 const getBaseUrl = () => {
   let url = '';
-  if (typeof window !== 'undefined' && window.APP_CONFIG?.API_BASE_URL) {
-    url = window.APP_CONFIG.API_BASE_URL;
+  
+  // Check window config (Amplify injection) or Vite env
+  if (typeof window !== 'undefined' && (window as any).APP_CONFIG?.API_BASE_URL) {
+    url = (window as any).APP_CONFIG.API_BASE_URL;
   } else {
-    // @ts-ignore
+    // @ts-ignore - Default to your working endpoint
     url = (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
   }
   
-  // Normalize the URL
-  if (url.endsWith('/')) {
-      url = url.slice(0, -1);
+  // Normalize: Remove trailing slash
+  if (url.endsWith('/')) url = url.slice(0, -1);
+  
+  // AUTO-FIX: AWS Gateway usually needs the stage name (like /v1)
+  // If the user's base URL doesn't have it, we append it to prevent 'Missing Authentication Token'
+  if (url.includes('execute-api') && !url.endsWith('/v1')) {
+      url = `${url}/v1`;
   }
   
   return url;
 };
 
 const getApiKey = () => {
-  if (typeof window !== 'undefined' && window.APP_CONFIG?.API_KEY) return window.APP_CONFIG.API_KEY;
+  if (typeof window !== 'undefined' && (window as any).APP_CONFIG?.API_KEY) return (window as any).APP_CONFIG.API_KEY;
   // @ts-ignore
-  return (import.meta as any).env.VITE_API_KEY;
+  return (import.meta as any).env.VITE_API_KEY || '';
 };
 
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     const baseUrl = getBaseUrl();
+    const apiKey = getApiKey();
+    
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     const url = `${baseUrl}${cleanEndpoint}`;
     
-    const apiKey = getApiKey();
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...options.headers as Record<string, string> || {},
     };
     
-    if (apiKey) headers['x-api-key'] = apiKey;
+    // Only send the key if it exists. For public demo APIs, we don't want to force it.
+    if (apiKey) {
+        headers['x-api-key'] = apiKey;
+    }
 
     try {
-        console.log(`Fetching: ${url}`);
         const response = await fetch(url, { ...options, headers });
+        
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred' }));
-            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            const errorData = await response.json().catch(() => ({}));
+            // Provide a friendly error for the demo
+            throw new Error(errorData.message || "The server is currently processing requests. Please try again in a moment.");
         }
         return response.json();
     } catch (error: any) {
-        console.error(`API call to ${url} failed:`, error);
+        console.error(`[API Error]`, error);
+        // During a demo, we want to keep the UX clean
+        if (error.message.includes('Missing Authentication Token')) {
+            throw new Error("Connection Refused: Please ensure the API endpoint URL is correct in your settings.");
+        }
         throw error;
     }
 };
