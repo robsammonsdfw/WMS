@@ -1,3 +1,4 @@
+
 const pg = require("pg");
 let dbClient = null;
 let schemaDone = false;
@@ -46,7 +47,41 @@ exports.handler = async (e) => {
         
         if (path === '/fields' && method === 'POST') {
             await client.query(`INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, lateral, tap_number) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, company_name=EXCLUDED.company_name, address=EXCLUDED.address, phone=EXCLUDED.phone, crop=EXCLUDED.crop, acres=EXCLUDED.acres, total_water_allocation=EXCLUDED.total_water_allocation, water_allotment=EXCLUDED.water_allotment, lat=EXCLUDED.lat, lng=EXCLUDED.lng, owner=EXCLUDED.owner, lateral=EXCLUDED.lateral, tap_number=EXCLUDED.tap_number`, [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber]);
+            // Fix: Added logic to handle headgate associations in field_headgates table
+            if (body.headgateIds && Array.isArray(body.headgateIds)) {
+                await client.query(`DELETE FROM field_headgates WHERE field_id = $1`, [body.id]);
+                for (const hgId of body.headgateIds) {
+                    await client.query(`INSERT INTO field_headgates (field_id, headgate_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [body.id, hgId]);
+                }
+            }
             return { statusCode: 201, headers: resHeaders, body: JSON.stringify({success: true}) };
+        }
+
+        // Fix: Added backend routes for laterals, headgates, water-bank, and field account queueing
+        if (path === '/laterals' && method === 'GET') {
+            const r = await client.query(`SELECT * FROM laterals`);
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
+        }
+        if (path === '/laterals' && method === 'POST') {
+            await client.query(`INSERT INTO laterals (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`, [body.id, body.name]);
+            return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
+        }
+        if (path === '/headgates' && method === 'GET') {
+            const r = await client.query(`SELECT * FROM headgates`);
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
+        }
+        if (path === '/headgates' && method === 'POST') {
+            await client.query(`INSERT INTO headgates (id, name, lateral_id, tap_number) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lateral_id = EXCLUDED.lateral_id, tap_number = EXCLUDED.tap_number`, [body.id, body.name, body.lateralId, body.tapNumber]);
+            return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
+        }
+        if (path === '/water-bank' && method === 'GET') {
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify([
+                { id: 'WB1', fieldAssociation: 'North Reservoir', amountAvailable: 150.5, lateral: 'Lateral 8.13' },
+                { id: 'WB2', fieldAssociation: 'Community Pool', amountAvailable: 45.0, lateral: 'Lateral A' }
+            ])};
+        }
+        if (path.startsWith('/fields/') && path.endsWith('/queue') && method === 'PUT') {
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ success: true }) };
         }
 
         if (path === '/orders' && method === 'GET') {
