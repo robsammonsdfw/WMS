@@ -30,7 +30,7 @@ async function getClient() {
 }
 
 exports.handler = async (e) => {
-    const resHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key", "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS", "Content-Type": "application/json" };
+    const resHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key", "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", "Content-Type": "application/json" };
     if (e.httpMethod === 'OPTIONS') return { statusCode: 200, headers: resHeaders, body: '' };
     
     let path = (e.path || "/").replace(/^\/(v1|prod|dev|v2)/, "");
@@ -54,6 +54,17 @@ exports.handler = async (e) => {
                 }
             }
             return { statusCode: 201, headers: resHeaders, body: JSON.stringify({success: true}) };
+        }
+
+        // Individual field deletion
+        if (path.startsWith('/fields/') && method === 'DELETE') {
+            const fieldId = path.split('/').pop();
+            // Delete associated water orders first or rely on constraints? 
+            // Better to delete orders first to avoid FK constraint errors if cascade isn't set for all relations
+            await client.query(`DELETE FROM water_orders WHERE field_id = $1`, [fieldId]);
+            await client.query(`DELETE FROM field_headgates WHERE field_id = $1`, [fieldId]);
+            const r = await client.query(`DELETE FROM fields WHERE id = $1`, [fieldId]);
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: r.rowCount > 0}) };
         }
 
         if (path === '/laterals' && method === 'GET') {

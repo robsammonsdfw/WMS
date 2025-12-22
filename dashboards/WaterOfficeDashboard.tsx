@@ -11,7 +11,7 @@ import {
 } from '../components/icons';
 import { 
     updateWaterOrder, getLaterals, getHeadgates, getFields,
-    createLateral, createHeadgate, createField, resetDatabase 
+    createLateral, createHeadgate, createField, deleteField, resetDatabase 
 } from '../services/api';
 import { USERS } from '../constants';
 
@@ -146,6 +146,20 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
           await refreshFields();
           alert("Field registered and linked successfully.");
       } catch (err: any) { alert(err.message); }
+  };
+
+  const handleDeleteSingleField = async (fieldId: string, fieldName: string) => {
+    if (window.confirm(`Are you sure you want to delete the field registry for "${fieldName}"? This will also remove its water order history.`)) {
+        try {
+            await deleteField(fieldId);
+            await fetchData();
+            await refreshWaterOrders();
+            await refreshFields();
+            alert(`Field "${fieldName}" deleted.`);
+        } catch (err: any) {
+            alert("Delete failed: " + (err.message || "Unknown error"));
+        }
+    }
   };
 
   const renderOverview = () => (
@@ -364,8 +378,15 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {fields.map(f => (
-                <div key={f.id} className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
-                    <p className="font-black text-gray-900 text-lg leading-tight">{f.name}</p>
+                <div key={f.id} className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100 group relative">
+                    <button 
+                        onClick={() => handleDeleteSingleField(f.id, f.name)}
+                        className="absolute top-4 right-4 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                        title="Delete Field Registry"
+                    >
+                        <TrashIcon className="h-4 w-4" />
+                    </button>
+                    <p className="font-black text-gray-900 text-lg leading-tight pr-8">{f.name}</p>
                     <p className="text-[10px] font-bold text-indigo-600 uppercase mt-1 tracking-widest">{f.owner || 'Registered Asset'}</p>
                     <div className="mt-4 flex gap-1 flex-wrap">
                         {(f.headgate_ids || []).map(hg => (

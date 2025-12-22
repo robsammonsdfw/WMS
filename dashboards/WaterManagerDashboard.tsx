@@ -16,7 +16,7 @@ import RemainingFeedView from '../components/RemainingFeedView';
 import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
 import { 
     createWaterOrder, updateWaterOrder, resetDatabase, 
-    getLaterals, getHeadgates, createField 
+    getLaterals, getHeadgates, createField, deleteField 
 } from '../services/api';
 
 interface WaterManagerDashboardProps {
@@ -103,6 +103,20 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       } catch (err: any) {
         alert("Reset failed: " + (err.message || "Unknown error"));
       }
+    }
+  };
+
+  const handleDeleteSingleField = async (e: React.MouseEvent, fieldId: string, fieldName: string) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to delete the field registry for "${fieldName}"? This will also remove its water order history.`)) {
+        try {
+            await deleteField(fieldId);
+            await refreshFields();
+            await refreshWaterOrders();
+            alert(`Field "${fieldName}" deleted.`);
+        } catch (err: any) {
+            alert("Delete failed: " + (err.message || "Unknown error"));
+        }
     }
   };
 
@@ -288,12 +302,19 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {fields.map(f => (
-                <div key={f.id} onClick={() => setSelectedFieldDetails(f)} className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100 hover:border-indigo-200 transition-colors cursor-pointer group">
-                    <div className="flex justify-between items-start mb-2">
+                <div key={f.id} onClick={() => setSelectedFieldDetails(f)} className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100 hover:border-indigo-200 transition-colors cursor-pointer group relative">
+                    <button 
+                        onClick={(e) => handleDeleteSingleField(e, f.id, f.name)}
+                        className="absolute top-4 right-4 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                        title="Delete Field Registry"
+                    >
+                        <TrashIcon className="h-4 w-4" />
+                    </button>
+                    <div className="flex justify-between items-start mb-2 pr-8">
                         <p className="font-black text-gray-900 text-lg group-hover:text-indigo-600 transition-colors">{f.name}</p>
-                        <span className="text-[8px] font-black bg-gray-100 px-2 py-0.5 rounded uppercase">{f.id}</span>
                     </div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{f.companyName || f.owner || 'Farmer'}</p>
+                    <span className="text-[8px] font-black bg-gray-100 px-2 py-0.5 rounded uppercase">{f.id}</span>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">{f.companyName || f.owner || 'Farmer'}</p>
                     <div className="mt-4 flex gap-2">
                         <div className="px-2 py-1 bg-blue-50 text-[9px] font-black text-blue-600 rounded-lg uppercase">Lat: {f.lateral || 'Direct'}</div>
                         <div className="px-2 py-1 bg-green-50 text-[9px] font-black text-green-600 rounded-lg uppercase">HG: {f.tapNumber || 'Direct'}</div>
@@ -358,9 +379,14 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.crop}</td>
                                     <td className="px-6 py-4 whitespace-nowrap font-black text-blue-600">{Number(field.waterUsed).toFixed(1)} / {Number(field.totalWaterAllocation).toFixed(1)} AF</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <button onClick={(e) => { e.stopPropagation(); setSelectedFieldForQR(field); }} className="text-blue-600 hover:text-blue-800 font-bold uppercase text-[10px] flex items-center gap-1">
-                                            <QrCodeIcon className="h-4 w-4" /> QR Codes
-                                        </button>
+                                        <div className="flex items-center gap-4">
+                                            <button onClick={(e) => { e.stopPropagation(); setSelectedFieldForQR(field); }} className="text-blue-600 hover:text-blue-800 font-bold uppercase text-[10px] flex items-center gap-1">
+                                                <QrCodeIcon className="h-4 w-4" /> QR Codes
+                                            </button>
+                                            <button onClick={(e) => handleDeleteSingleField(e, field.id, field.name)} className="text-red-500 hover:text-red-700 font-bold uppercase text-[10px] flex items-center gap-1">
+                                                <TrashIcon className="h-4 w-4" /> Delete
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
