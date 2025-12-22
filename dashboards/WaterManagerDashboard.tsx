@@ -47,9 +47,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newLatId, setNewLatId] = useState('');
   const [newLatName, setNewLatName] = useState('');
   const [newHGId, setNewHGId] = useState('');
-  const [newHGName, setNewHGName] = useState('');
   const [newHGLat, setNewHGLat] = useState('');
-  const [newHGTap, setNewHGTap] = useState('');
   const [newFieldId, setNewFieldId] = useState('');
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldCrop, setNewFieldCrop] = useState('');
@@ -70,8 +68,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     setIsLoadingAdmin(true);
     try {
       const [l, h] = await Promise.all([getLaterals(), getHeadgates()]);
-      setLaterals(l);
-      setHeadgates(h);
+      setLaterals(l || []);
+      setHeadgates(h || []);
     } catch (e) {
       console.error("Failed to load admin infrastructure data", e);
     } finally {
@@ -106,24 +104,30 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   // Infrastructure Handlers
   const handleAddLateral = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLatId || !newLatName) return;
+    if (!newLatId) return alert("Please enter a Rider ID (Lateral ID).");
+    if (!newLatName) return alert("Please enter a Lateral Name.");
     try {
         await createLateral({ id: newLatId, name: newLatName });
         setNewLatId(''); setNewLatName('');
         await fetchAdminData();
-        alert("Lateral registered successfully.");
+        alert("Rider Channel registered successfully.");
     } catch (err: any) { alert(err.message); }
   };
 
   const handleAddHeadgate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newHGId || !newHGName || !newHGLat) {
-        alert("Select a lateral for this headgate.");
-        return;
-    }
+    if (!newHGId) return alert("Please enter a Gate ID.");
+    if (!newHGLat) return alert("Please select a Rider/Lateral for this headgate.");
+    
     try {
-        await createHeadgate({ id: newHGId, name: newHGName, lateralId: newHGLat, tapNumber: newHGTap });
-        setNewHGId(''); setNewHGName(''); setNewHGLat(''); setNewHGTap('');
+        // PER USER REQUEST: Gate Name and Tap # now strictly mirror Gate ID
+        await createHeadgate({ 
+            id: newHGId, 
+            name: newHGId, 
+            lateralId: newHGLat, 
+            tapNumber: newHGId 
+        });
+        setNewHGId(''); setNewHGLat('');
         await fetchAdminData();
         alert("Headgate registered successfully.");
     } catch (err: any) { alert(err.message); }
@@ -131,7 +135,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   const handleAddField = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFieldId || !newFieldName) return;
+    if (!newFieldId) return alert("Please enter a Field ID.");
+    if (!newFieldName) return alert("Please enter a Field Name.");
     try {
         await createField({ 
             id: newFieldId, 
@@ -214,7 +219,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                             <h4 className="text-lg font-black uppercase tracking-widest">1. Rider / Lateral Registry</h4>
                         </div>
                         <form onSubmit={handleAddLateral} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100 shadow-sm">
-                            <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Rider ID (e.g. L-A)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
+                            <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Rider ID (Lateral ID)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
                             <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name" className="px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
                             <button type="submit" className="sm:col-span-2 bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-all shadow-lg shadow-blue-100">Register Rider Channel</button>
                         </form>
@@ -227,26 +232,26 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         </div>
                     </div>
 
-                    {/* Headgate Section */}
+                    {/* Headgate Section - Simplified */}
                     <div className="space-y-6">
                         <div className="flex items-center space-x-3 text-green-600">
                             <RefreshIcon className="h-6 w-6" />
                             <h4 className="text-lg font-black uppercase tracking-widest">2. Headgate Registry</h4>
                         </div>
-                        <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100 shadow-sm">
-                            <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID" className="px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-green-500 outline-none" />
-                            <input value={newHGName} onChange={e => setNewHGName(e.target.value)} placeholder="Gate Name" className="px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-green-500 outline-none" />
-                            <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold focus:ring-2 focus:ring-green-500 outline-none">
-                                <option value="">Select Rider/Lateral...</option>
-                                {laterals.map(l => <option key={l.id} value={l.id}>{l.name} ({l.id})</option>)}
-                            </select>
-                            <input value={newHGTap} onChange={e => setNewHGTap(e.target.value)} placeholder="Tap # Reference" className="px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-green-500 outline-none" />
-                            <button type="submit" className="sm:col-span-2 bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700 transition-all shadow-lg shadow-green-100">Register Headgate</button>
+                        <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100 shadow-sm">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID (Populates Name/Tap)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-green-500 outline-none w-full" />
+                                <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold focus:ring-2 focus:ring-green-500 outline-none w-full">
+                                    <option value="">Select Rider/Lateral...</option>
+                                    {laterals.map(l => <option key={l.id} value={l.id}>{l.name} ({l.id})</option>)}
+                                </select>
+                            </div>
+                            <button type="submit" className="bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700 transition-all shadow-lg shadow-green-100">Register Headgate</button>
                         </form>
                         <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
                             {headgates.map(h => (
                                 <div key={h.id} className="px-4 py-2 bg-white rounded-lg border border-gray-100 shadow-sm font-black text-xs text-gray-700">
-                                    {h.name} <span className="text-green-600 text-[10px] ml-1">TAP {h.tapNumber}</span>
+                                    {h.id} <span className="text-green-600 text-[10px] ml-1">TAP {h.tapNumber}</span>
                                 </div>
                             ))}
                         </div>

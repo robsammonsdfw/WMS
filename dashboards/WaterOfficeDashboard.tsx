@@ -37,15 +37,13 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   // Admin form state: Headgates
   const [newHGId, setNewHGId] = useState('');
-  const [newHGName, setNewHGName] = useState('');
   const [newHGLat, setNewHGLat] = useState('');
-  const [newHGTap, setNewHGTap] = useState('');
 
   // Admin form state: Fields
   const [newFieldId, setNewFieldId] = useState('');
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldCrop, setNewFieldCrop] = useState('');
-  const [newFieldAcres, setNewFieldAcres] = useState('');
+  const [newFieldAcresValue, setNewFieldAcresValue] = useState('');
   const [newFieldOwner, setNewFieldOwner] = useState('');
   const [newFieldLoc, setNewFieldLoc] = useState('');
   const [newFieldAlloc, setNewFieldAlloc] = useState('');
@@ -55,9 +53,9 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
     setIsLoading(true);
     try {
         const [l, h, f] = await Promise.all([getLaterals(), getHeadgates(), getFields()]);
-        setLaterals(l);
-        setHeadgates(h);
-        setFields(f);
+        setLaterals(l || []);
+        setHeadgates(h || []);
+        setFields(f || []);
     } catch (e) {
         console.error("Failed to load admin data", e);
     } finally {
@@ -97,7 +95,8 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   const handleAddLateral = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newLatId || !newLatName) return;
+      if (!newLatId) return alert("Please enter a Rider ID (Lateral ID).");
+      if (!newLatName) return alert("Please enter a Lateral Name.");
       try {
           await createLateral({ id: newLatId, name: newLatName });
           setNewLatId(''); setNewLatName('');
@@ -108,13 +107,18 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   const handleAddHeadgate = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newHGId || !newHGName || !newHGLat) {
-          alert("Error: Select a rider/lateral channel for this headgate.");
-          return;
-      }
+      if (!newHGId) return alert("Please enter a Gate ID.");
+      if (!newHGLat) return alert("Please select a Rider/Lateral for this headgate.");
+      
       try {
-          await createHeadgate({ id: newHGId, name: newHGName, lateralId: newHGLat, tapNumber: newHGTap });
-          setNewHGId(''); setNewHGName(''); setNewHGLat(''); setNewHGTap('');
+          // PER USER REQUEST: ID populates both Name and Tap Number
+          await createHeadgate({ 
+              id: newHGId, 
+              name: newHGId, 
+              lateralId: newHGLat, 
+              tapNumber: newHGId 
+          });
+          setNewHGId(''); setNewHGLat('');
           await fetchData();
           alert("Headgate registered successfully.");
       } catch (err: any) { alert(err.message); }
@@ -122,19 +126,20 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   const handleAddField = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newFieldId || !newFieldName) return;
+      if (!newFieldId) return alert("Please enter a Field ID.");
+      if (!newFieldName) return alert("Please enter a Field Name.");
       try {
           await createField({ 
               id: newFieldId, 
               name: newFieldName, 
               crop: newFieldCrop, 
-              acres: parseFloat(newFieldAcres) || 0,
+              acres: parseFloat(newFieldAcresValue) || 0,
               location: newFieldLoc,
               totalWaterAllocation: parseFloat(newFieldAlloc) || 0,
               owner: newFieldOwner,
               headgateIds: newFieldHGs
           });
-          setNewFieldId(''); setNewFieldName(''); setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldLoc(''); setNewFieldAlloc(''); setNewFieldHGs([]);
+          setNewFieldId(''); setNewFieldName(''); setNewFieldCrop(''); setNewFieldAcresValue(''); setNewFieldOwner(''); setNewFieldLoc(''); setNewFieldAlloc(''); setNewFieldHGs([]);
           await fetchData();
           alert("Field registered and linked successfully.");
       } catch (err: any) { alert(err.message); }
@@ -303,7 +308,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                             <h4 className="text-lg font-black uppercase tracking-widest">1. Rider / Lateral Registry</h4>
                         </div>
                         <form onSubmit={handleAddLateral} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
-                            <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Rider ID (e.g. L-A)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                            <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Rider ID (Lateral ID)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                             <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                             <button type="submit" className="sm:col-span-2 bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700">Add Rider Channel</button>
                         </form>
@@ -314,15 +319,15 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                             <RefreshIcon className="h-6 w-6" />
                             <h4 className="text-lg font-black uppercase tracking-widest">2. Headgate Registry</h4>
                         </div>
-                        <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100">
-                            <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500" />
-                            <input value={newHGName} onChange={e => setNewHGName(e.target.value)} placeholder="Gate Name" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500" />
-                            <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500">
-                                <option value="">Select Rider/Lateral...</option>
-                                {laterals.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                            </select>
-                            <input value={newHGTap} onChange={e => setNewHGTap(e.target.value)} placeholder="Tap # Reference" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500" />
-                            <button type="submit" className="sm:col-span-2 bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700">Add Headgate</button>
+                        <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID (Auto-populates Name/Tap)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500 w-full" />
+                                <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500 w-full">
+                                    <option value="">Select Rider/Lateral...</option>
+                                    {laterals.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                                </select>
+                            </div>
+                            <button type="submit" className="bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700">Add Headgate</button>
                         </form>
                     </div>
                 </div>
@@ -340,7 +345,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                                 <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Primary Crop" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="Acres" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <input type="number" value={newFieldAcresValue} onChange={e => setNewFieldAcresValue(e.target.value)} placeholder="Acres" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
                                 <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="Owner Name" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
                                 <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="Season Allocation (AF)" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
                                 <select multiple value={newFieldHGs} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewFieldHGs(Array.from(e.target.selectedOptions, (o: HTMLOptionElement) => o.value))} className="w-full px-4 py-2 border border-gray-200 rounded-xl bg-white font-bold h-[48px] outline-none focus:ring-2 focus:ring-indigo-500">
