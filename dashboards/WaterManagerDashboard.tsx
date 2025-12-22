@@ -97,7 +97,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
   const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
 
-  // Fix: Implemented handleResetDb to call resetDatabase API
   const handleResetDb = async () => {
     if (window.confirm("Are you sure you want to reset the entire database? This cannot be undone.")) {
       try {
@@ -111,7 +110,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     }
   };
 
-  // Fix: Implemented handleIrrigatorScan to process QR codes scanned by Water Manager
   const handleIrrigatorScan = (data: string) => {
     try {
       const parsed = JSON.parse(data);
@@ -181,6 +179,11 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const handleManualOrderCreate = async (formData: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; }) => {
     const field = fields.find(f => f.id === formData.fieldId);
     if (!field) return;
+
+    // FK Safety: Resolve IDs or send NULL (undefined in JS) so backend handles the conversion
+    const headgateId = field.headgateIds?.[0];
+    const lateralId = (field as any).lateralId; // Provided by improved backend GET /fields
+
     const newOrderData = {
         fieldId: field.id,
         fieldName: field.name,
@@ -189,15 +192,18 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         orderType: formData.orderType,
         deliveryStartDate: formData.deliveryStartDate,
         requestedAmount: formData.requestedAmount,
-        lateralId: field.lateral || '',
-        headgateId: field.headgateIds?.[0] || '',
+        lateralId: lateralId || undefined,
+        headgateId: headgateId || undefined,
         tapNumber: field.tapNumber || '',
     };
+
     try {
         await createWaterOrder(newOrderData);
         await refreshWaterOrders();
         setIsNewOrderModalOpen(false);
-    } catch (error: any) { alert(error.message || error); }
+    } catch (error: any) { 
+        alert(error.message || "Failed to create order. Please check infrastructure mapping."); 
+    }
   };
 
   const renderAdminView = () => (

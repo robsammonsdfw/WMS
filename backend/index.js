@@ -26,7 +26,14 @@ async function initSchema(client) {
             location VARCHAR(255),
             total_water_allocation NUMERIC,
             water_used NUMERIC DEFAULT 0,
-            owner VARCHAR(255)
+            owner VARCHAR(255),
+            company_name VARCHAR(255),
+            address TEXT,
+            phone VARCHAR(50),
+            lat NUMERIC,
+            lng NUMERIC,
+            water_allotment NUMERIC DEFAULT 0,
+            allotment_used NUMERIC DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS field_headgates (
@@ -153,18 +160,25 @@ exports.handler = async (event) => {
 
         if (path === '/fields') {
             if (httpMethod === 'GET') {
+                // Improved Query: We resolve the primary lateral_id by looking up the lateral associated with the first linked headgate
                 const res = await client.query(`
-                    SELECT f.*, array_agg(fh.headgate_id) as headgate_ids 
+                    SELECT f.*, 
+                           array_agg(DISTINCT fh.headgate_id) as headgate_ids,
+                           (SELECT h.lateral_id FROM headgates h JOIN field_headgates fh2 ON h.id = fh2.headgate_id WHERE fh2.field_id = f.id LIMIT 1) as lateral_id
                     FROM fields f 
                     LEFT JOIN field_headgates fh ON f.id = fh.field_id 
                     GROUP BY f.id
                 `);
-                return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
+                return { statusCode: 200, headers, body: JSON.stringify(res.rows.map(row => ({
+                    ...row,
+                    headgateIds: row.headgate_ids,
+                    lateralId: row.lateral_id
+                }))) };
             }
             if (httpMethod === 'POST') {
                 await client.query(
-                    "INSERT INTO fields (id, name, crop, acres, location, total_water_allocation, owner) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                    [body.id, body.name, body.crop, body.acres, body.location, body.totalWaterAllocation, body.owner]
+                    "INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+                    [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner]
                 );
                 if (body.headgateIds && Array.isArray(body.headgateIds)) {
                     for (const hgId of body.headgateIds) {
@@ -182,10 +196,15 @@ exports.handler = async (event) => {
             }
             if (httpMethod === 'POST') {
                 const id = 'ORD-' + Math.random().toString(36).substr(2, 5).toUpperCase();
+                
+                // FK handling: if the ID is blank, convert to NULL so Postgres doesn't look for an empty string ID in parent tables
+                const lateralId = (body.lateralId && body.lateralId !== '') ? body.lateralId : null;
+                const headgateId = (body.headgateId && body.headgateId !== '') ? body.headgateId : null;
+
                 await client.query(
                     `INSERT INTO water_orders (id, field_id, field_name, requester, status, order_type, requested_amount, delivery_start_date, lateral_id, headgate_id, tap_number) 
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                    [id, body.fieldId, body.fieldName, body.requester, body.status, body.orderType, body.requestedAmount, body.deliveryStartDate, body.lateralId, body.headgateId, body.tapNumber]
+                    [id, body.fieldId, body.fieldName, body.requester, body.status, body.orderType, body.requestedAmount, body.deliveryStartDate, lateralId, headgateId, body.tapNumber]
                 );
                 return { statusCode: 201, headers, body: JSON.stringify({ id }) };
             }
