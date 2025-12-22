@@ -29,6 +29,20 @@ const getApiKey = () => {
   return (import.meta as any).env.VITE_API_KEY || '';
 };
 
+// Helper to normalize snake_case keys from Postgres to camelCase for the UI
+const normalizeData = (data: any): any => {
+    if (Array.isArray(data)) return data.map(normalizeData);
+    if (data !== null && typeof data === 'object') {
+        return Object.keys(data).reduce((acc, key) => {
+            const camelKey = key.replace(/(_\w)/g, (m) => m[1].toUpperCase());
+            // @ts-ignore
+            acc[camelKey] = normalizeData(data[key]);
+            return acc;
+        }, {});
+    }
+    return data;
+};
+
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     const baseUrl = getBaseUrl();
     const apiKey = getApiKey();
@@ -62,14 +76,15 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
                 errorMessage = errorText || errorMessage;
             }
 
-            // DIAGNOSTIC FIX: Specifically handle the error seen in the user's screenshot
             if (response.status === 403 && (errorMessage.includes('Missing Authentication Token') || errorMessage === 'Forbidden')) {
                 throw new Error(`CONFIGURATION ERROR: The ${method} method for ${endpoint} is likely missing in your AWS API Gateway Console. Please add the ${method} method to the ${endpoint} resource and Deploy the API.`);
             }
             
             throw new Error(errorMessage);
         }
-        return response.json();
+        const json = await response.json();
+        // Automatically normalize keys from database
+        return normalizeData(json);
     } catch (error: any) {
         console.error(`[AquaTrack API Failure]`, error);
         throw error;

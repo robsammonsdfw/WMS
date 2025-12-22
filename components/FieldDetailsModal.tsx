@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { Field, WaterOrder, WaterOrderStatus, WaterOrderType } from '../types';
-import { XCircleIcon, UserGroupIcon, DocumentAddIcon, RefreshIcon, CheckCircleIcon } from './icons';
+import { Field, WaterOrder, WaterOrderStatus } from '../types';
+import { XCircleIcon, DocumentAddIcon } from './icons';
 
 interface FieldDetailsModalProps {
   field: Field;
@@ -15,12 +15,12 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
   const isRunning = !!activeOrder;
 
   // Real-time Calculations
-  const allocation = field.totalWaterAllocation || 0;
-  const allocationUsed = field.waterUsed || 0;
+  const allocation = Number(field.totalWaterAllocation) || 0;
+  const allocationUsed = Number(field.waterUsed) || 0;
   const allocationRemaining = Math.max(0, allocation - allocationUsed);
 
-  const allotment = field.waterAllotment || 0;
-  const allotmentUsed = field.allotmentUsed || 0;
+  const allotment = Number(field.waterAllotment) || 0;
+  const allotmentUsed = Number(field.allotmentUsed) || 0;
   const allotmentRemaining = Math.max(0, allotment - allotmentUsed);
 
   const runningInches = activeOrder?.requestedInches || field.currentRunningInches || 0;
@@ -67,9 +67,18 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                     <p className="text-black font-black text-xl leading-tight mt-1">{field.companyName || "Private Entity"}</p>
                 </div>
                 <div className="space-y-4">
-                    <p className="text-black/80 font-bold text-xs uppercase tracking-widest">{field.address || "No Address Registry"}</p>
-                    <p className="text-black font-black text-lg">{field.phone || "No Contact"}</p>
-                    <p className="text-black/60 font-black text-sm uppercase tracking-wider">{field.owner || "Owner Undefined"}</p>
+                    <div className="bg-black/5 p-3 rounded-2xl">
+                        <h3 className="text-black font-black uppercase text-[8px] tracking-widest opacity-50 mb-1">Address Registry</h3>
+                        <p className="text-black/80 font-bold text-[10px] uppercase leading-relaxed">{field.address || "No Address Provided"}</p>
+                    </div>
+                    <div className="bg-black/5 p-3 rounded-2xl">
+                        <h3 className="text-black font-black uppercase text-[8px] tracking-widest opacity-50 mb-1">Primary Contact</h3>
+                        <p className="text-black font-black text-lg">{field.phone || "No Phone Registered"}</p>
+                    </div>
+                    <div className="bg-black/5 p-3 rounded-2xl">
+                        <h3 className="text-black font-black uppercase text-[8px] tracking-widest opacity-50 mb-1">Account Owner</h3>
+                        <p className="text-black font-black text-sm uppercase tracking-wider">{field.owner || "Owner Undefined"}</p>
+                    </div>
                 </div>
             </div>
             
@@ -94,7 +103,7 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
 
         {/* Center Panel: Primary Stats */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-10 space-y-8">
-            {/* Header: Status Indication - HEXAGON STYLE */}
+            {/* Header: Status Indication */}
             <div className={`p-10 rounded-[2.5rem] shadow-xl transition-colors duration-500 text-center ${isRunning ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-red-600 text-white shadow-red-200'}`}>
                 <h2 className="text-4xl font-black uppercase tracking-tighter leading-none">{field.name}</h2>
                 <div className="mt-4 inline-block bg-white/20 px-6 py-1.5 rounded-full font-black text-[10px] uppercase tracking-[0.3em]">
@@ -137,18 +146,20 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
             {/* Quick Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="bg-gray-50 p-6 rounded-3xl border-2 border-gray-100">
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Account Registry</h3>
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Billing History</h3>
                     {field.accounts?.length > 0 ? (
                         <div className="space-y-2">
                             {field.accounts.map(acc => (
                                 <div key={acc.id} className="flex justify-between bg-white p-3 rounded-xl border border-gray-200">
                                     <span className="font-black text-xs">{acc.accountNumber}</span>
-                                    <span className="font-bold text-[10px] text-blue-600">{acc.usageForField?.toFixed(1)} AF used</span>
+                                    <span className="font-bold text-[10px] text-blue-600">{Number(acc.usageForField || 0).toFixed(1)} AF used</span>
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <p className="text-xs text-gray-400 italic">No accounts linked</p>
+                        <div className="p-4 bg-white/50 rounded-xl border-2 border-dashed border-gray-200 text-center">
+                            <p className="text-[10px] text-gray-400 font-black uppercase">No accounts linked</p>
+                        </div>
                     )}
                 </div>
 
@@ -160,8 +171,8 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                             <span className="font-black text-gray-900">{field.lateral || "Not Set"}</span>
                         </div>
                         <div className="flex justify-between border-b border-gray-200 pb-2">
-                            <span className="text-[10px] font-black text-gray-400 uppercase">Headgate</span>
-                            <span className="font-black text-gray-900">{field.headgateIds?.[0] || "Not Set"}</span>
+                            <span className="text-[10px] font-black text-gray-400 uppercase">Headgate / Tap</span>
+                            <span className="font-black text-gray-900">{field.tapNumber || field.headgateIds?.[0] || "Not Set"}</span>
                         </div>
                     </div>
                 </div>
@@ -180,12 +191,12 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                             <span className="text-xs font-black text-gray-900">{o.requestedAmount} AF</span>
                         </div>
                     ))}
-                    {history.length === 0 && <p className="text-center text-gray-400 text-xs italic">No prior orders</p>}
+                    {history.length === 0 && <p className="text-center text-gray-400 text-xs font-bold uppercase tracking-widest py-4">No prior orders recorded</p>}
                 </div>
             </div>
         </div>
 
-        {/* Right Sidebar: Actions (Green/Red Circles) */}
+        {/* Right Sidebar: Actions */}
         <div className="w-full md:w-64 bg-gray-50 p-8 border-l-4 border-white flex flex-col gap-6">
             <button 
                 onClick={onCreateOrder}
@@ -202,7 +213,9 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                     ${isRunning ? 'bg-red-500 text-white shadow-xl shadow-red-100 hover:bg-red-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
                 `}
             >
-                <XCircleIcon className="h-8 w-8" />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
                 TURN OFF WATER
             </button>
 
