@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, Field, WaterOrder, WaterOrderStatus, WaterOrderType, Lateral, Headgate } from '../types';
 import DashboardCard from '../components/DashboardCard';
@@ -73,7 +74,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         const fieldWithAlert = fields.find(f => {
             const activeAccount = f.accounts?.find(a => a.isActive);
             if (activeAccount?.allocationForField && activeAccount.usageForField) {
-                 const percent = (activeAccount.usageForField / activeAccount.allocationForField);
+                 const percent = (Number(activeAccount.usageForField) / Number(activeAccount.allocationForField));
                  return percent >= 0.75 && percent < 1.0 && !f.accounts.some(a => a.isQueued);
             }
             return false; 
@@ -84,9 +85,9 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     return () => clearTimeout(timer);
   }, [fields]);
 
-  const totalWaterUsed = fields.reduce((sum, field) => sum + (field.waterUsed || 0), 0);
-  const totalAllocation = fields.reduce((sum, field) => sum + (field.totalWaterAllocation || 0), 0);
-  const allocationUsedPercent = totalAllocation > 0 ? ((totalWaterUsed / totalAllocation) * 100).toFixed(1) : 0;
+  const totalWaterUsed = fields.reduce((sum, field) => sum + (Number(field.waterUsed) || 0), 0);
+  const totalAllocation = fields.reduce((sum, field) => sum + (Number(field.totalWaterAllocation) || 0), 0);
+  const allocationUsedPercent = totalAllocation > 0 ? ((totalWaterUsed / totalAllocation) * 100).toFixed(1) : "0";
 
   const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
   const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
@@ -355,7 +356,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                 <tr key={field.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedFieldDetails(field)}>
                                     <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{field.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.crop}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap font-black text-blue-600">{field.waterUsed} / {field.totalWaterAllocation} AF</td>
+                                    <td className="px-6 py-4 whitespace-nowrap font-black text-blue-600">{Number(field.waterUsed).toFixed(1)} / {Number(field.totalWaterAllocation).toFixed(1)} AF</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <button onClick={(e) => { e.stopPropagation(); setSelectedFieldForQR(field); }} className="text-blue-600 hover:text-blue-800 font-bold uppercase text-[10px] flex items-center gap-1">
                                             <QrCodeIcon className="h-4 w-4" /> QR Codes
