@@ -98,11 +98,12 @@ async function getDbClient() {
 }
 
 exports.handler = async (event) => {
+    // Explicit CORS headers - Important for AWS Lambda Proxy integration
     const corsHeaders = {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-api-key",
+        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-api-key,X-Requested-With",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Max-Age": "86400"
+        "Access-Control-Max-Age": "3600"
     };
 
     if (event.httpMethod === 'OPTIONS') {
@@ -111,21 +112,19 @@ exports.handler = async (event) => {
 
     const headers = { ...corsHeaders, "Content-Type": "application/json" };
     
-    // Path normalization: Support /v1/fields and /fields
+    // Normalize Path: Handle /v1/fields and /fields identically
     let path = event.path || "";
     const httpMethod = event.httpMethod;
 
-    if (path.startsWith('/v1/')) {
-        path = path.substring(3);
-    } else if (path === '/v1') {
-        path = '/';
-    }
+    // Remove stage prefixes (v1, prod, dev) to simplify logic
+    path = path.replace(/^\/(v1|prod|dev|v2)/, "");
+    if (path === "") path = "/";
 
     let client;
     try { 
         client = await getDbClient(); 
     } catch (e) { 
-        return { statusCode: 500, headers, body: JSON.stringify({ message: "Database connection failed." }) }; 
+        return { statusCode: 500, headers, body: JSON.stringify({ message: "Database connection failed. Check your environment variables." }) }; 
     }
 
     try {
@@ -214,7 +213,7 @@ exports.handler = async (event) => {
             return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
         }
 
-        return { statusCode: 404, headers, body: JSON.stringify({ message: "Request endpoint not found." }) };
+        return { statusCode: 404, headers, body: JSON.stringify({ message: `Path not found: ${httpMethod} ${path}` }) };
     } catch (err) {
         console.error("Handler error:", err);
         return { statusCode: 500, headers, body: JSON.stringify({ message: "Internal server error." }) };

@@ -25,11 +25,12 @@ interface WaterManagerDashboardProps {
   waterOrders: WaterOrder[];
   fields: Field[];
   refreshWaterOrders: () => Promise<void>;
+  refreshFields: () => Promise<void>;
 }
 
 type ViewMode = 'standard' | 'feed' | 'admin';
 
-const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders }) => {
+const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders, refreshFields }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('standard');
   const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
   const [selectedFieldDetails, setSelectedFieldDetails] = useState<Field | null>(null);
@@ -102,6 +103,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       try {
         await resetDatabase();
         await refreshWaterOrders();
+        await refreshFields();
         alert("Database reset successfully.");
         window.location.reload(); 
       } catch (err: any) {
@@ -171,7 +173,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             headgateIds: newFieldHGs
         });
         setNewFieldId(''); setNewFieldName(''); setNewCompName(''); setNewAddr(''); setNewPhone(''); setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldAlloc(''); setNewFieldAllotment(''); setNewLatCoord(''); setNewLngCoord(''); setNewFieldHGs([]);
-        await refreshWaterOrders(); 
+        await refreshFields(); // Crucial: Update global field registry immediately
         alert("Field Registry profile created.");
     } catch (err: any) { alert(err.message); }
   };
@@ -180,9 +182,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     const field = fields.find(f => f.id === formData.fieldId);
     if (!field) return;
 
-    // FK Safety: Resolve IDs or send NULL (undefined in JS) so backend handles the conversion
     const headgateId = field.headgateIds?.[0];
-    const lateralId = (field as any).lateralId; // Provided by improved backend GET /fields
+    const lateralId = (field as any).lateralId;
 
     const newOrderData = {
         fieldId: field.id,

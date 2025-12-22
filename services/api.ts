@@ -4,20 +4,19 @@ import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate } from '../types';
 const getBaseUrl = () => {
   let url = '';
   
-  // Check window config (Amplify injection) or Vite env
   if (typeof window !== 'undefined' && (window as any).APP_CONFIG?.API_BASE_URL) {
     url = (window as any).APP_CONFIG.API_BASE_URL;
   } else {
-    // @ts-ignore - Default to your working endpoint
+    // @ts-ignore
     url = (import.meta as any).env.VITE_API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
   }
   
-  // Normalize: Remove trailing slash
   if (url.endsWith('/')) url = url.slice(0, -1);
   
-  // AUTO-FIX: AWS Gateway usually needs the stage name (like /v1)
-  // If the user's base URL doesn't have it, we append it to prevent 'Missing Authentication Token'
-  if (url.includes('execute-api') && !url.endsWith('/v1')) {
+  const isAwsGateway = url.includes('execute-api');
+  const hasStage = /\/(v1|prod|dev|v2)$/.test(url);
+  
+  if (isAwsGateway && !hasStage) {
       url = `${url}/v1`;
   }
   
@@ -33,16 +32,18 @@ const getApiKey = () => {
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     const baseUrl = getBaseUrl();
     const apiKey = getApiKey();
+    const method = options.method || 'GET';
     
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     const url = `${baseUrl}${cleanEndpoint}`;
     
+    console.log(`[AquaTrack API] ${method} -> ${url}`);
+
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...options.headers as Record<string, string> || {},
     };
     
-    // Only send the key if it exists. For public demo APIs, we don't want to force it.
     if (apiKey) {
         headers['x-api-key'] = apiKey;
     }
@@ -51,17 +52,26 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
         const response = await fetch(url, { ...options, headers });
         
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            // Provide a friendly error for the demo
-            throw new Error(errorData.message || "The server is currently processing requests. Please try again in a moment.");
+            const errorText = await response.text();
+            let errorMessage = `Server Error (${response.status})`;
+            
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage = errorJson.message || errorMessage;
+            } catch (e) {
+                errorMessage = errorText || errorMessage;
+            }
+
+            // DIAGNOSTIC FIX: Specifically handle the error seen in the user's screenshot
+            if (response.status === 403 && (errorMessage.includes('Missing Authentication Token') || errorMessage === 'Forbidden')) {
+                throw new Error(`CONFIGURATION ERROR: The ${method} method for ${endpoint} is likely missing in your AWS API Gateway Console. Please add the ${method} method to the ${endpoint} resource and Deploy the API.`);
+            }
+            
+            throw new Error(errorMessage);
         }
         return response.json();
     } catch (error: any) {
-        console.error(`[API Error]`, error);
-        // During a demo, we want to keep the UX clean
-        if (error.message.includes('Missing Authentication Token')) {
-            throw new Error("Connection Refused: Please ensure the API endpoint URL is correct in your settings.");
-        }
+        console.error(`[AquaTrack API Failure]`, error);
         throw error;
     }
 };

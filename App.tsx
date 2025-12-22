@@ -15,21 +15,22 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const [ordersData, fieldsData] = await Promise.all([getWaterOrders(), getFields()]);
+      setWaterOrders(ordersData);
+      setFields(fieldsData);
+    } catch (err) {
+      console.error("Failed to fetch initial data:", err);
+      setError("Could not connect to the server. Please check your connection and try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const [ordersData, fieldsData] = await Promise.all([getWaterOrders(), getFields()]);
-        setWaterOrders(ordersData);
-        setFields(fieldsData);
-      } catch (err) {
-        console.error("Failed to fetch initial data:", err);
-        setError("Could not connect to the server. Please check your connection and try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
     fetchData();
   }, []);
 
@@ -40,7 +41,6 @@ const App: React.FC = () => {
     }
   };
   
-  // This function will be passed down to child components so they can refresh the data
   const refreshWaterOrders = async () => {
       try {
         const ordersData = await getWaterOrders();
@@ -48,6 +48,15 @@ const App: React.FC = () => {
       } catch (err) {
           console.error("Failed to refresh water orders:", err);
           setError("Failed to update water orders. Please try again.");
+      }
+  };
+
+  const refreshFields = async () => {
+      try {
+        const fieldsData = await getFields();
+        setFields(fieldsData);
+      } catch (err) {
+          console.error("Failed to refresh fields:", err);
       }
   };
 
@@ -61,9 +70,9 @@ const App: React.FC = () => {
 
     switch (currentUser.role) {
       case UserRole.WaterManager:
-        return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
+        return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
       case UserRole.WaterOffice:
-        return <WaterOfficeDashboard waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} />;
+        return <WaterOfficeDashboard waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
       case UserRole.DitchRider:
         return <DitchRiderDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
       default:

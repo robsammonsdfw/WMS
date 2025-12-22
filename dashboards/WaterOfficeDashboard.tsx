@@ -18,11 +18,12 @@ import { USERS } from '../constants';
 interface WaterOfficeDashboardProps {
   waterOrders: WaterOrder[];
   refreshWaterOrders: () => Promise<void>;
+  refreshFields: () => Promise<void>;
 }
 
 type Tab = 'overview' | 'riders' | 'admin';
 
-const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders, refreshWaterOrders }) => {
+const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders, refreshWaterOrders, refreshFields }) => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [selectedRider, setSelectedRider] = useState<User | null>(null);
   const [laterals, setLaterals] = useState<Lateral[]>([]);
@@ -101,6 +102,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
           await createLateral({ id: newLatId, name: newLatName });
           setNewLatId(''); setNewLatName('');
           await fetchData();
+          await refreshFields();
           alert("Lateral registered successfully.");
       } catch (err: any) { alert(err.message); }
   };
@@ -111,7 +113,6 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
       if (!newHGLat) return alert("Please select a Rider/Lateral for this headgate.");
       
       try {
-          // PER USER REQUEST: ID populates both Name and Tap Number
           await createHeadgate({ 
               id: newHGId, 
               name: newHGId, 
@@ -120,6 +121,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
           });
           setNewHGId(''); setNewHGLat('');
           await fetchData();
+          await refreshFields();
           alert("Headgate registered successfully.");
       } catch (err: any) { alert(err.message); }
   };
@@ -141,6 +143,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
           });
           setNewFieldId(''); setNewFieldName(''); setNewFieldCrop(''); setNewFieldAcresValue(''); setNewFieldOwner(''); setNewFieldLoc(''); setNewFieldAlloc(''); setNewFieldHGs([]);
           await fetchData();
+          await refreshFields();
           alert("Field registered and linked successfully.");
       } catch (err: any) { alert(err.message); }
   };
