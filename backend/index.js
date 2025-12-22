@@ -1,4 +1,3 @@
-
 const pg = require("pg");
 
 let dbClient;
@@ -100,7 +99,6 @@ async function getDbClient() {
 }
 
 exports.handler = async (event) => {
-    // Explicit CORS headers - Important for AWS Lambda Proxy integration
     const corsHeaders = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-api-key,X-Requested-With",
@@ -113,12 +111,9 @@ exports.handler = async (event) => {
     }
 
     const headers = { ...corsHeaders, "Content-Type": "application/json" };
-    
-    // Normalize Path: Handle /v1/fields and /fields identically
     let path = event.path || "";
     const httpMethod = event.httpMethod;
 
-    // Remove stage prefixes (v1, prod, dev) to simplify logic
     path = path.replace(/^\/(v1|prod|dev|v2)/, "");
     if (path === "") path = "/";
 
@@ -126,7 +121,7 @@ exports.handler = async (event) => {
     try { 
         client = await getDbClient(); 
     } catch (e) { 
-        return { statusCode: 500, headers, body: JSON.stringify({ message: "Database connection failed. Check your environment variables." }) }; 
+        return { statusCode: 500, headers, body: JSON.stringify({ message: "Database connection failed." }) }; 
     }
 
     try {
@@ -144,7 +139,7 @@ exports.handler = async (event) => {
                 return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
             }
             if (httpMethod === 'POST') {
-                await client.query("INSERT INTO laterals (id, name) VALUES ($1, $2)", [body.id, body.name]);
+                await client.query("INSERT INTO laterals (id, name) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name", [body.id, body.name]);
                 return { statusCode: 201, headers, body: JSON.stringify(body) };
             }
         }
@@ -155,7 +150,10 @@ exports.handler = async (event) => {
                 return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
             }
             if (httpMethod === 'POST') {
-                await client.query("INSERT INTO headgates (id, name, lateral_id, tap_number) VALUES ($1, $2, $3, $4)", [body.id, body.name, body.lateralId, body.tapNumber]);
+                await client.query(
+                    "INSERT INTO headgates (id, name, lateral_id, tap_number) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, lateral_id = EXCLUDED.lateral_id, tap_number = EXCLUDED.tap_number", 
+                    [body.id, body.name, body.lateralId, body.tapNumber]
+                );
                 return { statusCode: 201, headers, body: JSON.stringify(body) };
             }
         }
@@ -179,18 +177,36 @@ exports.handler = async (event) => {
                 }))) };
             }
             if (httpMethod === 'POST') {
+                // Implement UPSERT to handle both Create and Update seamlessly
                 await client.query(
-                    "INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, lateral, tap_number) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+                    `INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, lateral, tap_number) 
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                     ON CONFLICT (id) DO UPDATE SET 
+                        name = EXCLUDED.name,
+                        company_name = EXCLUDED.company_name,
+                        address = EXCLUDED.address,
+                        phone = EXCLUDED.phone,
+                        crop = EXCLUDED.crop,
+                        acres = EXCLUDED.acres,
+                        total_water_allocation = EXCLUDED.total_water_allocation,
+                        water_allotment = EXCLUDED.water_allotment,
+                        lat = EXCLUDED.lat,
+                        lng = EXCLUDED.lng,
+                        owner = EXCLUDED.owner,
+                        lateral = EXCLUDED.lateral,
+                        tap_number = EXCLUDED.tap_number`,
                     [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber]
                 );
-                // Also link to relational table if an actual headgate ID was provided
+                
+                // Refresh Headgate Mapping if provided
                 if (body.headgateIds && Array.isArray(body.headgateIds)) {
+                    // Clear existing mappings for this field first
+                    await client.query("DELETE FROM field_headgates WHERE field_id = $1", [body.id]);
                     for (const hgId of body.headgateIds) {
                         try {
                             await client.query("INSERT INTO field_headgates (field_id, headgate_id) VALUES ($1, $2)", [body.id, hgId]);
                         } catch (e) {
-                            // Silently ignore FK errors for the demo if headgate doesn't exist yet
-                            console.log("Could not create link to headgate table (likely missing headgate record):", hgId);
+                            console.log("Headgate not in registry, skipping relational link:", hgId);
                         }
                     }
                 }
