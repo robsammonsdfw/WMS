@@ -24,9 +24,20 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
   const allotmentRemaining = Math.max(0, allotment - allotmentUsed);
 
   const runningInches = activeOrder?.requestedInches || field.currentRunningInches || 0;
-  // Conversion: 25 Miner's Inches = 1 AF per day (AFPD)
   const afpd = runningInches / 25;
   const daysRemaining = (isRunning && afpd > 0) ? (allotmentRemaining / afpd).toFixed(0) : "0";
+
+  // Days Running / Days Off Logic
+  const lastStateChangeOrder = orders
+    .filter(o => o.fieldId === field.id && (o.status === WaterOrderStatus.InProgress || o.status === WaterOrderStatus.Completed))
+    .sort((a, b) => new Date(b.deliveryStartDate).getTime() - new Date(a.deliveryStartDate).getTime())[0];
+  
+  const calculateDaysSince = (dateStr?: string) => {
+    if (!dateStr) return 0;
+    const diff = new Date().getTime() - new Date(dateStr).getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  };
+  const durationDays = calculateDaysSince(lastStateChangeOrder?.deliveryStartDate);
 
   const googleMapsUrl = (field.lat && field.lng) 
     ? `https://www.google.com/maps/dir/?api=1&destination=${field.lat},${field.lng}` 
@@ -50,7 +61,7 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
         
         {/* Left Sidebar: Company Info (Yellow Card) */}
         <div className="w-full md:w-80 bg-yellow-400 p-8 flex flex-col justify-between border-r-4 border-white">
-            <div className="space-y-6">
+            <div className="space-y-6 text-center md:text-left">
                 <div className="bg-black/10 p-4 rounded-3xl">
                     <h3 className="text-black font-black uppercase text-[10px] tracking-widest opacity-60">Company Entity</h3>
                     <p className="text-black font-black text-xl leading-tight mt-1">{field.companyName || "Private Entity"}</p>
@@ -81,45 +92,46 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
             </div>
         </div>
 
-        {/* Center Panel: Primary Stats (Blue/Red Hexagon Logic) */}
+        {/* Center Panel: Primary Stats */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-10 space-y-8">
-            {/* Header: Status Indication */}
-            <div className={`p-8 rounded-[2.5rem] shadow-xl transition-colors duration-500 ${isRunning ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-red-600 text-white shadow-red-200'}`}>
-                <div className="flex justify-between items-start">
-                    <div>
-                        <h2 className="text-3xl font-black uppercase tracking-tighter leading-none">{field.name}</h2>
-                        <p className="text-white/60 font-bold text-xs uppercase tracking-[0.3em] mt-3">
-                            {field.acres} Acres {field.crop}
-                        </p>
-                    </div>
-                    <div className="bg-white/20 px-4 py-2 rounded-2xl font-black text-[10px] uppercase tracking-widest">
-                        {isRunning ? 'Running' : 'Offline'}
-                    </div>
+            {/* Header: Status Indication - HEXAGON STYLE */}
+            <div className={`p-10 rounded-[2.5rem] shadow-xl transition-colors duration-500 text-center ${isRunning ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-red-600 text-white shadow-red-200'}`}>
+                <h2 className="text-4xl font-black uppercase tracking-tighter leading-none">{field.name}</h2>
+                <div className="mt-4 inline-block bg-white/20 px-6 py-1.5 rounded-full font-black text-[10px] uppercase tracking-[0.3em]">
+                    {field.acres} Acres {field.crop}
                 </div>
 
-                <div className="mt-8 pt-8 border-t border-white/20 grid grid-cols-2 gap-8">
+                <div className="mt-8 grid grid-cols-2 gap-8 text-center">
                     <div>
-                        <p className="text-white/60 font-black uppercase text-[9px] tracking-widest">Allowance Remaining</p>
-                        <p className="text-4xl font-black mt-1">{allocationRemaining.toFixed(1)} <span className="text-sm font-bold opacity-60">ACFT</span></p>
+                        <p className="text-white/60 font-black uppercase text-[10px] tracking-widest">Allowance Remaining</p>
+                        <p className="text-3xl font-black mt-1">{allocationRemaining.toFixed(1)} <span className="text-xs font-bold opacity-60">ACFT</span></p>
                     </div>
                     <div>
-                        <p className="text-white/60 font-black uppercase text-[9px] tracking-widest">Allotment Remaining</p>
-                        <p className="text-4xl font-black mt-1">{allotmentRemaining.toFixed(1)} <span className="text-sm font-bold opacity-60">ACFT</span></p>
+                        <p className="text-white/60 font-black uppercase text-[10px] tracking-widest">Allotment Remaining</p>
+                        <p className="text-3xl font-black mt-1">{allotmentRemaining.toFixed(1)} <span className="text-xs font-bold opacity-60">ACFT</span></p>
                     </div>
                 </div>
                 
-                {isRunning && (
-                    <div className="mt-6 bg-white/10 p-6 rounded-3xl flex justify-between items-center">
-                        <div>
-                            <p className="text-white/50 font-black uppercase text-[8px] tracking-widest">Currently Running</p>
-                            <p className="text-xl font-black">{runningInches}" <span className="text-[10px] opacity-60">/ {afpd.toFixed(1)} AFPD</span></p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-white/50 font-black uppercase text-[8px] tracking-widest">Days Remaining</p>
-                            <p className="text-3xl font-black tracking-tighter">{daysRemaining}</p>
-                        </div>
+                <div className="mt-10 pt-8 border-t border-white/20 space-y-4">
+                    <div className="text-white/80 font-black text-xl uppercase tracking-tight">
+                        {isRunning ? (
+                            <>CURRENTLY RUNNING: {runningInches}" / {afpd.toFixed(1)} AFPD</>
+                        ) : (
+                            <>CURRENTLY OFFLINE</>
+                        )}
                     </div>
-                )}
+                    
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="text-3xl font-black tracking-tighter uppercase">
+                            {durationDays} DAYS {isRunning ? 'RUNNING' : 'OFF'}
+                        </div>
+                        {isRunning && (
+                            <div className="bg-black/20 px-4 py-1 rounded-lg text-sm font-black text-white/90">
+                                {daysRemaining} DAYS ESTIMATED FEED REMAINING
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
             {/* Quick Stats Grid */}
@@ -173,7 +185,7 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
             </div>
         </div>
 
-        {/* Right Sidebar: Actions (Green Circles style) */}
+        {/* Right Sidebar: Actions (Green/Red Circles) */}
         <div className="w-full md:w-64 bg-gray-50 p-8 border-l-4 border-white flex flex-col gap-6">
             <button 
                 onClick={onCreateOrder}
@@ -185,7 +197,7 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
             
             <button 
                 disabled={!isRunning}
-                onClick={onCreateOrder} // In a real app, this would pre-fill 'Turn Off'
+                onClick={onCreateOrder}
                 className={`w-full aspect-square p-6 rounded-full font-black uppercase text-[10px] tracking-[0.2em] flex flex-col items-center justify-center gap-2 transition-all text-center
                     ${isRunning ? 'bg-red-500 text-white shadow-xl shadow-red-100 hover:bg-red-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
                 `}

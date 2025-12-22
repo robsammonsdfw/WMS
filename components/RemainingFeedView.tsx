@@ -13,131 +13,91 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return 'Asap';
     try {
-        // Handle ISO strings (2025-12-09T00...) or simple dates (2025-12-09)
         const cleanDate = dateStr.split('T')[0];
         const [year, month, day] = cleanDate.split('-');
-        if (year && month && day) {
-            return `${month}-${day}-${year}`;
-        }
+        if (year && month && day) return `${month}/${day}/${year.slice(-2)}`;
         return cleanDate;
-    } catch (e) {
-        return dateStr;
-    }
+    } catch (e) { return dateStr; }
+  };
+
+  const calculateDaysSince = (dateStr?: string) => {
+    if (!dateStr) return 0;
+    const past = new Date(dateStr).getTime();
+    const now = new Date().getTime();
+    const diff = now - past;
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
   };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
       {fields.map(field => {
-        // 1. Determine Current Status (Is Water ON?)
+        // 1. Current State (Running vs Off)
         const activeOrder = waterOrders.find(
           o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress
         );
         const isRunning = !!activeOrder;
 
-        // 2. Determine Pending Status (Is something waiting?)
+        // 2. Pending Order Logic (For Turn On or Turn Off)
         const pendingOrder = waterOrders.find(
             o => o.fieldId === field.id && 
             (o.status === WaterOrderStatus.Pending || o.status === WaterOrderStatus.Approved)
         );
 
-        // Calculate Totals
-        const allocation = typeof field.totalWaterAllocation === 'number' ? field.totalWaterAllocation : 0;
-        const used = typeof field.waterUsed === 'number' ? field.waterUsed : 0;
+        // 3. Days Running / Days Off Calculation
+        // We find the last order that caused a state change to determine the duration
+        const lastOrder = waterOrders
+            .filter(o => o.fieldId === field.id && (o.status === WaterOrderStatus.InProgress || o.status === WaterOrderStatus.Completed))
+            .sort((a, b) => new Date(b.deliveryStartDate).getTime() - new Date(a.deliveryStartDate).getTime())[0];
         
-        const remaining = allocation - used;
-        const percentUsed = allocation > 0 ? (used / allocation) * 100 : 0;
+        const durationDays = calculateDaysSince(lastOrder?.deliveryStartDate);
 
-        // --- Visual Configuration Logic ---
-        let cardColor = 'bg-red-600'; 
-        let statusBadge = null;
-        let pendingBadge = null;
+        // 4. Rate and Allotment
+        const runningInches = activeOrder?.requestedInches || field.currentRunningInches || 0;
+        const afpd = runningInches / 25; // 25" = 1 AF per day
+        const allotmentRemaining = (field.waterAllotment || 0) - (field.allotmentUsed || 0);
 
-        if (isRunning) {
-            // CASE: Water is currently ON
-            cardColor = 'bg-blue-600';
-            
-            statusBadge = (
-                <div className="inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-blue-800 text-white border border-blue-400 shadow-sm">
-                    WATER RUNNING
-                </div>
-            );
-
-            if (pendingOrder) {
-                // CASE: Water ON, but Pending Order exists (Pending Turn Off/Switch)
-                pendingBadge = (
-                     <div className="mt-1 inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-100 text-red-800 border border-red-300 shadow-sm">
-                        PENDING: {formatDate(pendingOrder.deliveryStartDate)}
-                    </div>
-                );
-            }
-
-        } else {
-            // CASE: Water is currently OFF
-            cardColor = 'bg-red-600'; // User Requirement: Stays Red if Off
-
-            statusBadge = (
-                <div className="inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-900 text-red-100 border border-red-800 shadow-sm">
-                    WATER OFF
-                </div>
-            );
-            
-            if (pendingOrder) {
-                // CASE: Water OFF, but Pending Order exists (Pending Turn On)
-                // User Requirement: "PENDING" badge is White/Blue for high visibility.
-                pendingBadge = (
-                     <div className="mt-1 inline-block px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-white text-blue-800 border-2 border-blue-600 shadow-md animate-pulse">
-                        PENDING START: {formatDate(pendingOrder.deliveryStartDate)}
-                    </div>
-                );
-            }
-        }
+        // Style based on state
+        const cardBg = isRunning ? 'bg-blue-600' : 'bg-red-600';
 
         return (
           <div 
             key={field.id} 
             onClick={() => onFieldClick(field)}
-            className={`${cardColor} rounded-xl shadow-lg overflow-hidden flex flex-col h-64 border-4 border-white ring-1 ring-gray-200 cursor-pointer transition-transform hover:scale-[1.02]`}
+            className={`${cardBg} rounded-[2rem] shadow-2xl p-8 flex flex-col items-center justify-center text-center space-y-4 border-4 border-white ring-1 ring-gray-200 cursor-pointer transition-transform hover:scale-[1.03] min-h-[320px]`}
           >
-            {/* Header */}
-            <div className="p-4 text-center">
-              <h3 className="text-2xl font-black text-white tracking-wide uppercase drop-shadow-md truncate">
+            {/* Field Name */}
+            <h3 className="text-3xl font-black text-white tracking-tighter uppercase leading-none">
                 {field.name}
-              </h3>
-              <p className="text-blue-100 text-sm font-semibold opacity-90">{field.crop} • {field.acres} Acres</p>
-              
-              <div className="mt-2 flex flex-col items-center justify-center space-y-1 min-h-[50px]">
-                 {statusBadge}
-                 {pendingBadge}
-              </div>
+            </h3>
+
+            {/* Currently Running Rate */}
+            <div className="text-white font-black text-xl uppercase tracking-tight">
+                {isRunning ? (
+                    <>CURRENTLY {runningInches}" / {afpd.toFixed(1)} ACFT</>
+                ) : (
+                    <>CURRENTLY OFFLINE</>
+                )}
             </div>
 
-            {/* Totals Section */}
-            <div className="flex-1 bg-white mx-4 mb-4 rounded-lg p-4 flex flex-col justify-center shadow-inner">
-              <div className="grid grid-cols-2 gap-4 text-center mb-3">
-                <div className="flex flex-col">
-                    <span className="text-xs text-gray-500 font-bold uppercase">Used</span>
-                    <span className="text-xl font-bold text-gray-800">{used.toFixed(1)} <span className="text-xs text-gray-400">AF</span></span>
-                </div>
-                <div className="flex flex-col border-l border-gray-200">
-                    <span className="text-xs text-gray-500 font-bold uppercase">Remaining</span>
-                    <span className={`text-xl font-bold ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {remaining.toFixed(1)} <span className="text-xs text-gray-400">AF</span>
-                    </span>
-                </div>
-              </div>
+            {/* Allotment Remaining */}
+            <div className="text-white/90 font-black text-lg uppercase tracking-widest">
+                {allotmentRemaining.toFixed(1)} ACFT ALLOTMENT REMAINING
+            </div>
 
-              {/* Progress Bar */}
-              <div className="w-full bg-gray-200 rounded-full h-6 relative overflow-hidden">
-                <div 
-                    className={`h-full transition-all duration-500 flex items-center justify-center text-[10px] font-bold text-white shadow-sm ${
-                        percentUsed > 100 ? 'bg-red-500' : 
-                        percentUsed > 85 ? 'bg-orange-400' : 'bg-green-500'
-                    }`}
-                    style={{ width: `${Math.min(percentUsed, 100)}%` }}
-                >
-                    {percentUsed.toFixed(0)}%
-                </div>
-              </div>
+            {/* Pending Order Info */}
+            <div className="min-h-[28px]">
+                {pendingOrder ? (
+                    <div className="bg-white/20 px-4 py-1 rounded-full text-white font-black text-sm uppercase tracking-wider">
+                        PENDING {pendingOrder.orderType === 'Turn Off' ? 'OFF' : 'ON'} ORDER {formatDate(pendingOrder.deliveryStartDate)}
+                    </div>
+                ) : (
+                    <div className="text-white/40 text-xs font-bold uppercase tracking-widest">NO PENDING ORDERS</div>
+                )}
+            </div>
+
+            {/* Days Running / Days Off */}
+            <div className="text-white font-black text-2xl uppercase tracking-tighter pt-4 border-t border-white/20 w-full">
+                {durationDays} DAYS {isRunning ? 'RUNNING' : 'OFF'}
             </div>
           </div>
         );
