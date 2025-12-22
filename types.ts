@@ -1,6 +1,4 @@
 
-
-
 export enum UserRole {
   WaterManager = 'Water Manager',
   WaterOffice = 'Water Office',
@@ -12,7 +10,7 @@ export interface User {
   id: number;
   name: string;
   role: UserRole;
-  assignedLaterals?: string[]; // IDs of laterals this rider is responsible for
+  assignedLaterals?: string[];
 }
 
 export enum WaterOrderStatus {
@@ -40,7 +38,6 @@ export interface Headgate {
   name: string;
   lateralId: string;
   lateral?: string;
-  // Fix: Added lateral_name to match the backend's "SELECT h.*, l.name as lateral_name" response structure
   lateral_name?: string;
   tapNumber: string;
 }
@@ -59,20 +56,26 @@ export interface Account {
 export interface Field {
   id: string;
   name: string;
+  companyName?: string;
+  address?: string;
+  phone?: string;
   crop: string;
   acres: number;
   location: string;
+  lat?: number;
+  lng?: number;
   totalWaterAllocation: number;
   waterUsed: number;
+  waterAllotment?: number;
+  allotmentUsed?: number;
   owner?: string; 
   headgateIds: string[]; 
-  // Fix: Added headgate_ids to match the backend's "array_agg(fh.headgate_id) as headgate_ids" response structure
   headgate_ids?: string[];
-  // Added missing properties referenced in components
   headgates?: Headgate[];
   lateral?: string;
   tapNumber?: string;
   accounts: Account[];
+  currentRunningInches?: number;
 }
 
 export interface WaterOrder {
@@ -82,19 +85,17 @@ export interface WaterOrder {
   requester: string;
   status: WaterOrderStatus;
   orderType: WaterOrderType;
-  orderDate: string; // Created date
-  deliveryStartDate: string; // When the water should turn on/off
-  requestedAmount: number; // in acre-feet
-  requestedInches?: number; // Calculated from amount
+  orderDate: string;
+  deliveryStartDate: string;
+  requestedAmount: number;
+  requestedInches?: number;
   lateralId: string;
-  // Added missing properties referenced in components
   lateral?: string;
   headgateId: string;
   tapNumber: string;
   ditchRiderId?: number;
 }
 
-// Added missing WaterBankEntry interface referenced in components/services
 export interface WaterBankEntry {
   id: string;
   fieldAssociation?: string;
