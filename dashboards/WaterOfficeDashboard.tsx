@@ -7,7 +7,7 @@ import DashboardCard from '../components/DashboardCard';
 import { 
     ClockIcon, CheckCircleIcon, RefreshIcon, WaterDropIcon, 
     DocumentReportIcon, UserGroupIcon, ChevronDownIcon, 
-    XCircleIcon, PlusIcon, TrashIcon 
+    XCircleIcon, PlusIcon, TrashIcon, ChartBarIcon as ViewGridIcon
 } from '../components/icons';
 import { 
     updateWaterOrder, getLaterals, getHeadgates, getFields,
@@ -84,7 +84,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
         }
     });
     return Object.values(data);
-  }, [waterOrders, laterals, reportDateRange]);
+  }, [waterOrders, laterals]);
 
   const handleUpdateStatus = async (orderId: string, status: WaterOrderStatus) => {
     try {
@@ -109,7 +109,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   const handleAddHeadgate = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newHGId || !newHGName || !newHGLat) {
-          alert("Error: All headgates must be assigned to a lateral for reporting purposes.");
+          alert("Error: Select a rider/lateral channel for this headgate.");
           return;
       }
       try {
@@ -288,129 +288,84 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   };
 
   const renderAdmin = () => (
-    <div className="space-y-12 animate-in slide-in-from-bottom-6 duration-300">
-        
-        {/* ROW 1: Laterals & Headgates */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-            {/* Lateral Manager */}
-            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
-                <div className="flex items-center mb-8">
-                    <div className="bg-blue-600 p-3 rounded-xl mr-4 text-white"><DocumentReportIcon className="h-6 w-6"/></div>
-                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">1. Lateral Registry</h3>
-                </div>
-                <form onSubmit={handleAddLateral} className="space-y-4 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Lateral ID (e.g. L-1)" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                        <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                    </div>
-                    <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-all">Add Lateral</button>
-                </form>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                    {laterals.map(l => (
-                        <div key={l.id} className="flex justify-between items-center p-4 bg-white rounded-xl border border-gray-200">
-                            <span className="font-black text-gray-800">{l.id}: {l.name}</span>
-                        </div>
-                    ))}
-                </div>
+    <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300">
+        <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden">
+            <div className="bg-gray-900 p-8 text-white">
+                <h3 className="text-2xl font-black uppercase tracking-tight">Infrastructure Command Center</h3>
+                <p className="text-gray-400 font-bold text-sm">Central registry for Riders, Gates, and Fields</p>
             </div>
 
-            {/* Headgate Manager */}
-            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
-                <div className="flex items-center mb-8">
-                    <div className="bg-green-600 p-3 rounded-xl mr-4 text-white"><RefreshIcon className="h-6 w-6"/></div>
-                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">2. Headgate Registry</h3>
-                </div>
-                <form onSubmit={handleAddHeadgate} className="space-y-4 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-200">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID (e.g. HG-101)" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                        <input value={newHGName} onChange={e => setNewHGName(e.target.value)} placeholder="Gate Name" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white font-bold">
-                            <option value="">Select Lateral...</option>
-                            {laterals.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                        </select>
-                        <input value={newHGTap} onChange={e => setNewHGTap(e.target.value)} placeholder="Tap # Reference" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                    </div>
-                    <button type="submit" className="w-full bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700 transition-all">Add Headgate</button>
-                </form>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                    {headgates.map(h => (
-                        <div key={h.id} className="p-4 bg-white rounded-xl border border-gray-200 flex justify-between">
-                            <span className="font-black text-gray-800">{h.name} ({h.id})</span>
-                            <span className="text-[10px] font-bold text-gray-400 uppercase">Tap {h.tapNumber}</span>
+            <div className="p-8 space-y-12">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
+                    <div className="space-y-6">
+                        <div className="flex items-center space-x-3 text-blue-600">
+                            <UserGroupIcon className="h-6 w-6" />
+                            <h4 className="text-lg font-black uppercase tracking-widest">1. Rider / Lateral Registry</h4>
                         </div>
-                    ))}
+                        <form onSubmit={handleAddLateral} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
+                            <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Rider ID (e.g. L-A)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                            <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                            <button type="submit" className="sm:col-span-2 bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700">Add Rider Channel</button>
+                        </form>
+                    </div>
+
+                    <div className="space-y-6">
+                        <div className="flex items-center space-x-3 text-green-600">
+                            <RefreshIcon className="h-6 w-6" />
+                            <h4 className="text-lg font-black uppercase tracking-widest">2. Headgate Registry</h4>
+                        </div>
+                        <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100">
+                            <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500" />
+                            <input value={newHGName} onChange={e => setNewHGName(e.target.value)} placeholder="Gate Name" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500" />
+                            <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500">
+                                <option value="">Select Rider/Lateral...</option>
+                                {laterals.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                            </select>
+                            <input value={newHGTap} onChange={e => setNewHGTap(e.target.value)} placeholder="Tap # Reference" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500" />
+                            <button type="submit" className="sm:col-span-2 bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700">Add Headgate</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div className="border-t border-gray-100 pt-12">
+                    <div className="space-y-6">
+                        <div className="flex items-center space-x-3 text-indigo-600">
+                            <ViewGridIcon className="h-6 w-6" />
+                            <h4 className="text-lg font-black uppercase tracking-widest">3. Field Registry & Asset Mapping</h4>
+                        </div>
+                        <form onSubmit={handleAddField} className="space-y-6 bg-indigo-50/50 p-8 rounded-[2.5rem] border border-indigo-100 shadow-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <input value={newFieldId} onChange={e => setNewFieldId(e.target.value)} placeholder="Field ID (F-001)" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="Field Name" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Primary Crop" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                                <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="Acres" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="Owner Name" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="Season Allocation (AF)" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <select multiple value={newFieldHGs} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewFieldHGs(Array.from(e.target.selectedOptions, (o: HTMLOptionElement) => o.value))} className="w-full px-4 py-2 border border-gray-200 rounded-xl bg-white font-bold h-[48px] outline-none focus:ring-2 focus:ring-indigo-500">
+                                    {headgates.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                                </select>
+                            </div>
+                            <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-indigo-700">Register Field Assets</button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
 
-        {/* ROW 2: Field Manager */}
-        <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
-            <div className="flex items-center mb-8">
-                <div className="bg-indigo-600 p-3 rounded-xl mr-4 text-white"><UserGroupIcon className="h-6 w-6"/></div>
-                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">3. Field Registry & Infrastructure Link</h3>
-            </div>
-            <form onSubmit={handleAddField} className="space-y-6 bg-gray-50 p-8 rounded-3xl border border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Field ID</label>
-                        <input value={newFieldId} onChange={e => setNewFieldId(e.target.value)} placeholder="F-001" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Display Name</label>
-                        <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="North Ranch" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Primary Crop</label>
-                        <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Alfalfa" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {fields.map(f => (
+                <div key={f.id} className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100">
+                    <p className="font-black text-gray-900 text-lg leading-tight">{f.name}</p>
+                    <p className="text-[10px] font-bold text-indigo-600 uppercase mt-1 tracking-widest">{f.owner || 'Registered Asset'}</p>
+                    <div className="mt-4 flex gap-1 flex-wrap">
+                        {(f.headgate_ids || []).map(hg => (
+                            <span key={hg} className="text-[9px] bg-gray-50 border border-gray-100 px-2 py-0.5 rounded font-black text-gray-400 uppercase">{hg}</span>
+                        ))}
                     </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Total Acres</label>
-                        <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="160" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner/Farmer Name</label>
-                        <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="John Doe" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Season Allocation (AF)</label>
-                        <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="640" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Assign Headgate(s)</label>
-                        {/* Fix: Explicitly type map function parameter to resolve 'unknown' type error for multiple select value extraction */}
-                        <select 
-                            multiple 
-                            value={newFieldHGs} 
-                            onChange={e => {
-                                const values = Array.from(e.target.selectedOptions, (option: HTMLOptionElement) => option.value);
-                                setNewFieldHGs(values);
-                            }}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-xl bg-white font-bold h-[48px] overflow-y-auto"
-                        >
-                            {headgates.map(h => <option key={h.id} value={h.id}>{h.name} (Lat: {h.lateral_name})</option>)}
-                        </select>
-                        <p className="text-[9px] text-gray-400 mt-1 italic">*Hold Ctrl/Cmd to select multiple</p>
-                    </div>
-                </div>
-                <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all">Register Field Assets</button>
-            </form>
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {fields.map(f => (
-                    <div key={f.id} className="p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
-                        <p className="font-black text-gray-900 leading-tight">{f.name}</p>
-                        <p className="text-[10px] font-bold text-indigo-600 uppercase mt-1">{f.owner}</p>
-                        <div className="mt-3 flex gap-1 flex-wrap">
-                            {(f.headgate_ids || []).map(hg => (
-                                <span key={hg} className="text-[8px] bg-gray-100 px-1.5 py-0.5 rounded font-black text-gray-500">{hg}</span>
-                            ))}
-                        </div>
-                    </div>
-                ))}
-            </div>
+            ))}
         </div>
     </div>
   );
