@@ -5,13 +5,39 @@ let schemaDone = false;
 
 async function initSchema(client) {
     if (schemaDone) return;
+    
+    // Create base tables
     await client.query(`
         CREATE TABLE IF NOT EXISTS laterals (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL);
         CREATE TABLE IF NOT EXISTS headgates (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, lateral_id VARCHAR(255) REFERENCES laterals(id), tap_number VARCHAR(50));
         CREATE TABLE IF NOT EXISTS fields (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), crop VARCHAR(255), acres NUMERIC, location VARCHAR(255), total_water_allocation NUMERIC, water_used NUMERIC DEFAULT 0, owner VARCHAR(255), company_name VARCHAR(255), address TEXT, phone VARCHAR(50), lat NUMERIC, lng NUMERIC, water_allotment NUMERIC DEFAULT 0, allotment_used NUMERIC DEFAULT 0, "lateral" VARCHAR(255), tap_number VARCHAR(255));
         CREATE TABLE IF NOT EXISTS field_headgates (field_id VARCHAR(255) REFERENCES fields(id) ON DELETE CASCADE, headgate_id VARCHAR(255) REFERENCES headgates(id) ON DELETE CASCADE, PRIMARY KEY (field_id, headgate_id));
-        CREATE TABLE IF NOT EXISTS water_orders (id VARCHAR(255) PRIMARY KEY, field_id VARCHAR(255) REFERENCES fields(id), field_name VARCHAR(255), requester VARCHAR(255), status VARCHAR(50), order_type VARCHAR(50), order_date TIMESTAMP DEFAULT NOW(), requested_amount NUMERIC, delivery_start_date DATE, lateral_id VARCHAR(255) REFERENCES laterals(id), headgate_id VARCHAR(255) REFERENCES headgates(id), tap_number VARCHAR(50));
+        
+        -- water_orders table without strict FK constraints on lateral/headgate to support manual labels
+        CREATE TABLE IF NOT EXISTS water_orders (
+            id VARCHAR(255) PRIMARY KEY, 
+            field_id VARCHAR(255) REFERENCES fields(id), 
+            field_name VARCHAR(255), 
+            requester VARCHAR(255), 
+            status VARCHAR(50), 
+            order_type VARCHAR(50), 
+            order_date TIMESTAMP DEFAULT NOW(), 
+            requested_amount NUMERIC, 
+            delivery_start_date DATE, 
+            lateral_id VARCHAR(255), 
+            headgate_id VARCHAR(255), 
+            tap_number VARCHAR(50)
+        );
     `);
+
+    // Migration: Attempt to drop constraints if they exist from previous versions
+    try {
+        await client.query(`ALTER TABLE water_orders DROP CONSTRAINT IF EXISTS water_orders_lateral_id_fkey`);
+        await client.query(`ALTER TABLE water_orders DROP CONSTRAINT IF EXISTS water_orders_headgate_id_fkey`);
+    } catch (e) {
+        console.log("Migration (Drop Constraints) note:", e.message);
+    }
+
     schemaDone = true;
 }
 
@@ -56,11 +82,8 @@ exports.handler = async (e) => {
             return { statusCode: 201, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
-        // Individual field deletion
         if (path.startsWith('/fields/') && method === 'DELETE') {
             const fieldId = path.split('/').pop();
-            // Delete associated water orders first or rely on constraints? 
-            // Better to delete orders first to avoid FK constraint errors if cascade isn't set for all relations
             await client.query(`DELETE FROM water_orders WHERE field_id = $1`, [fieldId]);
             await client.query(`DELETE FROM field_headgates WHERE field_id = $1`, [fieldId]);
             const r = await client.query(`DELETE FROM fields WHERE id = $1`, [fieldId]);
