@@ -8,7 +8,7 @@ async function initSchema(client) {
     await client.query(`
         CREATE TABLE IF NOT EXISTS laterals (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL);
         CREATE TABLE IF NOT EXISTS headgates (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, lateral_id VARCHAR(255) REFERENCES laterals(id), tap_number VARCHAR(50));
-        CREATE TABLE IF NOT EXISTS fields (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), crop VARCHAR(255), acres NUMERIC, location VARCHAR(255), total_water_allocation NUMERIC, water_used NUMERIC DEFAULT 0, owner VARCHAR(255), company_name VARCHAR(255), address TEXT, phone VARCHAR(50), lat NUMERIC, lng NUMERIC, water_allotment NUMERIC DEFAULT 0, allotment_used NUMERIC DEFAULT 0, lateral VARCHAR(255), tap_number VARCHAR(255));
+        CREATE TABLE IF NOT EXISTS fields (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), crop VARCHAR(255), acres NUMERIC, location VARCHAR(255), total_water_allocation NUMERIC, water_used NUMERIC DEFAULT 0, owner VARCHAR(255), company_name VARCHAR(255), address TEXT, phone VARCHAR(50), lat NUMERIC, lng NUMERIC, water_allotment NUMERIC DEFAULT 0, allotment_used NUMERIC DEFAULT 0, "lateral" VARCHAR(255), tap_number VARCHAR(255));
         CREATE TABLE IF NOT EXISTS field_headgates (field_id VARCHAR(255) REFERENCES fields(id) ON DELETE CASCADE, headgate_id VARCHAR(255) REFERENCES headgates(id) ON DELETE CASCADE, PRIMARY KEY (field_id, headgate_id));
         CREATE TABLE IF NOT EXISTS water_orders (id VARCHAR(255) PRIMARY KEY, field_id VARCHAR(255) REFERENCES fields(id), field_name VARCHAR(255), requester VARCHAR(255), status VARCHAR(50), order_type VARCHAR(50), order_date TIMESTAMP DEFAULT NOW(), requested_amount NUMERIC, delivery_start_date DATE, lateral_id VARCHAR(255) REFERENCES laterals(id), headgate_id VARCHAR(255) REFERENCES headgates(id), tap_number VARCHAR(50));
     `);
@@ -46,8 +46,7 @@ exports.handler = async (e) => {
         } 
         
         if (path === '/fields' && method === 'POST') {
-            await client.query(`INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, lateral, tap_number) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, company_name=EXCLUDED.company_name, address=EXCLUDED.address, phone=EXCLUDED.phone, crop=EXCLUDED.crop, acres=EXCLUDED.acres, total_water_allocation=EXCLUDED.total_water_allocation, water_allotment=EXCLUDED.water_allotment, lat=EXCLUDED.lat, lng=EXCLUDED.lng, owner=EXCLUDED.owner, lateral=EXCLUDED.lateral, tap_number=EXCLUDED.tap_number`, [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber]);
-            // Fix: Added logic to handle headgate associations in field_headgates table
+            await client.query(`INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, "lateral", tap_number) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, company_name=EXCLUDED.company_name, address=EXCLUDED.address, phone=EXCLUDED.phone, crop=EXCLUDED.crop, acres=EXCLUDED.acres, total_water_allocation=EXCLUDED.total_water_allocation, water_allotment=EXCLUDED.water_allotment, lat=EXCLUDED.lat, lng=EXCLUDED.lng, owner=EXCLUDED.owner, "lateral"=EXCLUDED."lateral", tap_number=EXCLUDED.tap_number`, [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber]);
             if (body.headgateIds && Array.isArray(body.headgateIds)) {
                 await client.query(`DELETE FROM field_headgates WHERE field_id = $1`, [body.id]);
                 for (const hgId of body.headgateIds) {
@@ -57,7 +56,6 @@ exports.handler = async (e) => {
             return { statusCode: 201, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
-        // Fix: Added backend routes for laterals, headgates, water-bank, and field account queueing
         if (path === '/laterals' && method === 'GET') {
             const r = await client.query(`SELECT * FROM laterals`);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
