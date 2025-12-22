@@ -1,17 +1,24 @@
 
-import React, { useState, useEffect } from 'react';
-import { User, Field, WaterOrder, WaterOrderStatus, WaterOrderType } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { User, Field, WaterOrder, WaterOrderStatus, WaterOrderType, Lateral, Headgate } from '../types';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
 import SeasonStatistics from '../components/SeasonStatistics';
 import FieldDetailsModal from '../components/FieldDetailsModal';
-import { WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, RefreshIcon, ChartBarIcon as ViewGridIcon, BellIcon, TrashIcon } from '../components/icons';
+import { 
+    WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, 
+    RefreshIcon, ChartBarIcon as ViewGridIcon, BellIcon, TrashIcon,
+    PlusIcon, UserGroupIcon, DocumentAddIcon
+} from '../components/icons';
 import QRCodeModal from '../components/QRCodeModal';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
 import Scanner from '../components/Scanner';
 import RemainingFeedView from '../components/RemainingFeedView';
 import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
-import { createWaterOrder, updateWaterOrder, resetDatabase } from '../services/api';
+import { 
+    createWaterOrder, updateWaterOrder, resetDatabase, 
+    getLaterals, getHeadgates, createLateral, createHeadgate, createField 
+} from '../services/api';
 
 interface WaterManagerDashboardProps {
   user: User;
@@ -20,39 +27,71 @@ interface WaterManagerDashboardProps {
   refreshWaterOrders: () => Promise<void>;
 }
 
+type ViewMode = 'standard' | 'feed' | 'admin';
+
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders }) => {
-  const [viewMode, setViewMode] = useState<'standard' | 'feed'>('standard');
+  const [viewMode, setViewMode] = useState<ViewMode>('standard');
   const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
   const [selectedFieldDetails, setSelectedFieldDetails] = useState<Field | null>(null);
   const [alertField, setAlertField] = useState<Field | null>(null);
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
   const [createOrderInitialFieldId, setCreateOrderInitialFieldId] = useState<string | undefined>(undefined);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  
+  // Infrastructure state
+  const [laterals, setLaterals] = useState<Lateral[]>([]);
+  const [headgates, setHeadgates] = useState<Headgate[]>([]);
+  const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
+
+  // Infrastructure Form states
+  const [newLatId, setNewLatId] = useState('');
+  const [newLatName, setNewLatName] = useState('');
+  const [newHGId, setNewHGId] = useState('');
+  const [newHGName, setNewHGName] = useState('');
+  const [newHGLat, setNewHGLat] = useState('');
+  const [newHGTap, setNewHGTap] = useState('');
+  const [newFieldId, setNewFieldId] = useState('');
+  const [newFieldName, setNewFieldName] = useState('');
+  const [newFieldCrop, setNewFieldCrop] = useState('');
+  const [newFieldAcres, setNewFieldAcres] = useState('');
+  const [newFieldOwner, setNewFieldOwner] = useState('');
+  const [newFieldLoc, setNewFieldLoc] = useState('');
+  const [newFieldAlloc, setNewFieldAlloc] = useState('');
+  const [newFieldHGs, setNewFieldHGs] = useState<string[]>([]);
+
+  // Fetch admin data when switching to admin view
+  useEffect(() => {
+    if (viewMode === 'admin') {
+      fetchAdminData();
+    }
+  }, [viewMode]);
+
+  const fetchAdminData = async () => {
+    setIsLoadingAdmin(true);
+    try {
+      const [l, h] = await Promise.all([getLaterals(), getHeadgates()]);
+      setLaterals(l);
+      setHeadgates(h);
+    } catch (e) {
+      console.error("Failed to load admin infrastructure data", e);
+    } finally {
+      setIsLoadingAdmin(false);
+    }
+  };
 
   // Check for alerts on fields whenever 'fields' data updates
   useEffect(() => {
     const checkForAlerts = () => {
-        // Find the first field that meets the 75% criteria AND has active accounts to manage
         const fieldWithAlert = fields.find(f => {
-            // Check usage against total allocation if accounts aren't detailed, 
-            // OR check specific active account usage if available
             const activeAccount = f.accounts?.find(a => a.isActive);
             if (activeAccount && activeAccount.allocationForField && activeAccount.usageForField) {
                  const percent = (activeAccount.usageForField / activeAccount.allocationForField);
-                 // Trigger if >= 75% and < 100% (assuming at 100% it might have already auto-switched or needs a different alert)
-                 // Also ensure we haven't already queued someone (f.accounts.some(a => a.isQueued))? 
-                 // The prompt implies we want to replace/queue when we get this alert.
                  return percent >= 0.75 && percent < 1.0 && !f.accounts.some(a => a.isQueued);
             }
             return false; 
         });
-
-        if (fieldWithAlert) {
-            setAlertField(fieldWithAlert);
-        }
+        if (fieldWithAlert) setAlertField(fieldWithAlert);
     };
-    
-    // Small timeout to allow UI to settle before popping modal
     const timer = setTimeout(checkForAlerts, 1000);
     return () => clearTimeout(timer);
   }, [fields]);
@@ -64,16 +103,55 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
   const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
 
-  const handleManualOrderCreate = async (formData: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; }) => {
-    const field = fields.find(f => f.id === formData.fieldId);
-    if (!field) {
-        alert('Selected field not found.');
+  // Infrastructure Handlers
+  const handleAddLateral = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLatId || !newLatName) return;
+    try {
+        await createLateral({ id: newLatId, name: newLatName });
+        setNewLatId(''); setNewLatName('');
+        await fetchAdminData();
+        alert("Lateral registered successfully.");
+    } catch (err: any) { alert(err.message); }
+  };
+
+  const handleAddHeadgate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newHGId || !newHGName || !newHGLat) {
+        alert("Select a lateral for this headgate.");
         return;
     }
+    try {
+        await createHeadgate({ id: newHGId, name: newHGName, lateralId: newHGLat, tapNumber: newHGTap });
+        setNewHGId(''); setNewHGName(''); setNewHGLat(''); setNewHGTap('');
+        await fetchAdminData();
+        alert("Headgate registered successfully.");
+    } catch (err: any) { alert(err.message); }
+  };
 
-    const primaryHeadgate = field.headgates && field.headgates.length > 0 ? field.headgates[0] : null;
-    const lateral = primaryHeadgate ? primaryHeadgate.lateral : (field.lateral || 'Unassigned');
-    const tapNumber = primaryHeadgate ? primaryHeadgate.tapNumber : (field.tapNumber || '');
+  const handleAddField = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFieldId || !newFieldName) return;
+    try {
+        await createField({ 
+            id: newFieldId, 
+            name: newFieldName, 
+            crop: newFieldCrop, 
+            acres: parseFloat(newFieldAcres) || 0,
+            location: newFieldLoc,
+            totalWaterAllocation: parseFloat(newFieldAlloc) || 0,
+            owner: newFieldOwner,
+            headgateIds: newFieldHGs
+        });
+        setNewFieldId(''); setNewFieldName(''); setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldLoc(''); setNewFieldAlloc(''); setNewFieldHGs([]);
+        await refreshWaterOrders(); // This refreshes fields as well in App context
+        alert("Field registered and linked successfully.");
+    } catch (err: any) { alert(err.message); }
+  };
+
+  const handleManualOrderCreate = async (formData: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; }) => {
+    const field = fields.find(f => f.id === formData.fieldId);
+    if (!field) return;
 
     const newOrderData = {
         fieldId: field.id,
@@ -83,125 +161,170 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         orderType: formData.orderType,
         deliveryStartDate: formData.deliveryStartDate,
         requestedAmount: formData.requestedAmount,
-        lateral: lateral,
-        tapNumber: tapNumber,
+        lateralId: field.lateral || '',
+        headgateId: field.headgateIds?.[0] || '',
+        tapNumber: field.tapNumber || '',
     };
 
     try {
         await createWaterOrder(newOrderData);
         await refreshWaterOrders();
         setIsNewOrderModalOpen(false);
-        setCreateOrderInitialFieldId(undefined);
-        alert(`New ${formData.orderType} order for ${field.name} has been created and sent for approval.`);
-    } catch (error: any) {
-        alert(error.message || error);
-    }
+        alert(`New order created.`);
+    } catch (error: any) { alert(error.message || error); }
   };
 
   const handleIrrigatorScan = async (data: string) => {
     setIsScannerOpen(false);
     try {
         const { action, fieldName } = JSON.parse(data);
-        alert(`Scanned ${fieldName}: Request to ${action === 'start-delivery' ? 'START' : 'STOP'} water sent to Water Manager.`);
-    } catch (e) {
-        alert("Invalid QR Code");
-    }
+        alert(`Scanned ${fieldName}: Request sent.`);
+    } catch (e) { alert("Invalid QR Code"); }
   };
 
-  const handleSubmitToOffice = async (order: WaterOrder) => {
-    const updatedOrder = { 
-        ...order, 
-        status: WaterOrderStatus.Pending, 
-        requester: user.name 
-    };
-
-    try {
-        await updateWaterOrder(order.id, updatedOrder);
-        await refreshWaterOrders();
-        alert(`Order ${order.id} has been submitted to the water office for final approval.`);
-    } catch (error: any) {
-        alert(`Error submitting order: ${error.message || error}`);
-    }
-  };
-  
   const handleResetDb = async () => {
-      if(confirm("Are you sure you want to RESET the entire database? This will delete all data and reload seed data.")) {
+      if(confirm("Reset entire database?")) {
           try {
               await resetDatabase();
-              alert("Database has been reset and seeded. The page will reload.");
               window.location.reload();
-          } catch(e: any) {
-              alert("Failed to reset database: " + e.message);
-          }
+          } catch(e: any) { alert(e.message); }
       }
   };
 
-  const riderRequestActions = (order: WaterOrder) => (
-    <button
-      onClick={() => handleSubmitToOffice(order)}
-      className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
-    >
-      Review & Submit
-    </button>
+  const renderAdminView = () => (
+    <div className="space-y-12 animate-in slide-in-from-bottom-6 duration-300 pb-20">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            {/* Lateral Manager */}
+            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+                <div className="flex items-center mb-8">
+                    <div className="bg-blue-600 p-3 rounded-xl mr-4 text-white"><DocumentReportIcon className="h-6 w-6"/></div>
+                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">1. Lateral Registry</h3>
+                </div>
+                <form onSubmit={handleAddLateral} className="space-y-4 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Lateral ID (e.g. L-A)" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                        <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700">Add Lateral</button>
+                </form>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    {laterals.map(l => (
+                        <div key={l.id} className="flex justify-between items-center p-4 bg-white rounded-xl border border-gray-200">
+                            <span className="font-black text-gray-800">{l.id}: {l.name}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Headgate Manager */}
+            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+                <div className="flex items-center mb-8">
+                    <div className="bg-green-600 p-3 rounded-xl mr-4 text-white"><RefreshIcon className="h-6 w-6"/></div>
+                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">2. Headgate Registry</h3>
+                </div>
+                <form onSubmit={handleAddHeadgate} className="space-y-4 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                        <input value={newHGName} onChange={e => setNewHGName(e.target.value)} placeholder="Gate Name" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-white font-bold">
+                            <option value="">Select Lateral...</option>
+                            {laterals.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        </select>
+                        <input value={newHGTap} onChange={e => setNewHGTap(e.target.value)} placeholder="Tap # Reference" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    </div>
+                    <button type="submit" className="w-full bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700">Add Headgate</button>
+                </form>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    {headgates.map(h => (
+                        <div key={h.id} className="p-4 bg-white rounded-xl border border-gray-200 flex justify-between">
+                            <span className="font-black text-gray-800">{h.name} ({h.id})</span>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">Tap {h.tapNumber}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+
+        {/* Field Manager */}
+        <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+            <div className="flex items-center mb-8">
+                <div className="bg-indigo-600 p-3 rounded-xl mr-4 text-white"><UserGroupIcon className="h-6 w-6"/></div>
+                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">3. Field Registry & Infrastructure Link</h3>
+            </div>
+            <form onSubmit={handleAddField} className="space-y-6 bg-gray-50 p-8 rounded-3xl border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <input value={newFieldId} onChange={e => setNewFieldId(e.target.value)} placeholder="Field ID (F-001)" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="Field Name" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Primary Crop" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="Acres" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="Owner Name" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="Season Allocation (AF)" className="w-full px-4 py-3 border border-gray-300 rounded-xl font-bold" />
+                    {/* Fix: Explicitly type the option element in Array.from to resolve 'unknown' type error for multiple select value extraction */}
+                    <select multiple value={newFieldHGs} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewFieldHGs(Array.from(e.target.selectedOptions, (o: HTMLOptionElement) => o.value))} className="w-full px-4 py-2 border border-gray-300 rounded-xl bg-white font-bold h-[48px]">
+                        {headgates.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                    </select>
+                </div>
+                <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-indigo-700">Register Field Assets</button>
+            </form>
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {fields.map(f => (
+                    <div key={f.id} className="p-4 bg-white rounded-2xl border border-gray-200 shadow-sm">
+                        <p className="font-black text-gray-900">{f.name}</p>
+                        <p className="text-[10px] font-bold text-indigo-600 uppercase">{f.owner || 'Unknown Owner'}</p>
+                    </div>
+                ))}
+            </div>
+        </div>
+    </div>
   );
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return 'Asap';
-    try {
-        // Handle ISO strings (2025-12-09T00...) or simple dates (2025-12-09)
-        const cleanDate = dateStr.split('T')[0];
-        const [year, month, day] = cleanDate.split('-');
-        if (year && month && day) {
-            return `${month}-${day}-${year}`;
-        }
-        return cleanDate;
-    } catch (e) {
-        return dateStr;
-    }
-  };
-
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-          <h2 className="text-2xl font-bold text-gray-800">Welcome, {user.name}</h2>
+    <div className="space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 border-b-2 border-gray-100 pb-8">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+                <span className="w-10 h-1 bg-blue-600 rounded-full"></span>
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.3em]">Water Manager Operations</p>
+            </div>
+            <h2 className="text-4xl font-black text-gray-900 tracking-tight">Operations Center</h2>
+          </div>
           
-          <div className="flex flex-wrap gap-2 w-full xl:w-auto">
+          <div className="flex bg-gray-100 rounded-[2rem] p-1.5 border-2 border-white shadow-inner">
             <button 
-                onClick={() => setViewMode(viewMode === 'standard' ? 'feed' : 'standard')}
-                className={`flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${viewMode === 'feed' ? 'bg-gray-800 text-white border-transparent' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                onClick={() => setViewMode('standard')}
+                className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'standard' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}
             >
-                {viewMode === 'standard' ? (
-                   <>
-                     <ViewGridIcon className="-ml-1 mr-2 h-5 w-5" />
-                     <span className="whitespace-nowrap">Switch to Feed View</span>
-                   </>
-                ) : (
-                   <>
-                     <RefreshIcon className="-ml-1 mr-2 h-5 w-5" />
-                     <span className="whitespace-nowrap">Standard View</span>
-                   </>
-                )}
+                Standard
             </button>
             <button 
-                    onClick={() => setIsScannerOpen(true)}
-                    className="flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                    <QrCodeIcon className="-ml-1 mr-2 h-5 w-5" />
-                    <span className="whitespace-nowrap">Scan Field Tag</span>
+                onClick={() => setViewMode('feed')}
+                className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'feed' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}
+            >
+                Remaining Feed
             </button>
+            <button 
+                onClick={() => setViewMode('admin')}
+                className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'admin' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}
+            >
+                Infrastructure
+            </button>
+          </div>
 
-            {/* RESET DB Button */}
-            <button 
-                onClick={handleResetDb}
-                className="flex-1 xl:flex-none inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-bold rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-            >
-                <TrashIcon className="-ml-1 mr-2 h-5 w-5" />
-                <span className="whitespace-nowrap">Reset Database</span>
+          <div className="flex gap-2">
+            <button onClick={() => setIsScannerOpen(true)} className="inline-flex items-center px-4 py-2 border border-transparent text-xs font-black rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 uppercase tracking-widest shadow-lg shadow-indigo-100">
+                <QrCodeIcon className="-ml-1 mr-2 h-4 w-4" /> Scan Tag
+            </button>
+            <button onClick={handleResetDb} className="inline-flex items-center px-4 py-2 border border-transparent text-xs font-black rounded-xl text-white bg-red-600 hover:bg-red-700 uppercase tracking-widest shadow-lg shadow-red-100">
+                <TrashIcon className="-ml-1 mr-2 h-4 w-4" /> Reset DB
             </button>
           </div>
       </div>
       
-      {viewMode === 'feed' ? (
+      {viewMode === 'admin' ? renderAdminView() : viewMode === 'feed' ? (
         <RemainingFeedView 
           fields={fields} 
           waterOrders={waterOrders} 
@@ -210,151 +333,56 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       ) : (
         <>
             <SeasonStatistics>
-                <DashboardCard
-                title="Total Water Used (Season)"
-                value={`${totalWaterUsed.toFixed(1)} AF`}
-                icon={<WaterDropIcon className="h-6 w-6 text-blue-600" />}
-                color="bg-blue-100"
-                />
-                <DashboardCard
-                title="Total Allocation"
-                value={`${totalAllocation.toFixed(1)} AF`}
-                icon={<DocumentReportIcon className="h-6 w-6 text-green-600" />}
-                color="bg-green-100"
-                />
-                <DashboardCard
-                title="Allocation Used"
-                value={`${allocationUsedPercent}%`}
-                icon={<ChartBarIcon className="h-6 w-6 text-yellow-600" />}
-                color="bg-yellow-100"
-                />
+                <DashboardCard title="Total Water Used" value={`${totalWaterUsed.toFixed(1)} AF`} icon={<WaterDropIcon className="h-6 w-6 text-blue-600" />} color="bg-blue-100" />
+                <DashboardCard title="Total Allocation" value={`${totalAllocation.toFixed(1)} AF`} icon={<DocumentReportIcon className="h-6 w-6 text-green-600" />} color="bg-green-100" />
+                <DashboardCard title="Allocation Used" value={`${allocationUsedPercent}%`} icon={<ChartBarIcon className="h-6 w-6 text-yellow-600" />} color="bg-yellow-100" />
             </SeasonStatistics>
             
             {awaitingApprovalOrders.length > 0 && (
-                <WaterOrderList
-                orders={awaitingApprovalOrders}
-                title="New Requests from Ditch Riders"
-                actions={riderRequestActions}
-                />
+                <WaterOrderList orders={awaitingApprovalOrders} title="Rider Approval Requests" actions={(order) => (
+                    <button onClick={() => updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.Pending }).then(refreshWaterOrders)} className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 font-bold uppercase">Submit to Office</button>
+                )} />
             )}
 
-            <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-                <div className="flex flex-wrap gap-4 justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold text-gray-800">My Fields</h3>
-                </div>
+            <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100">
+                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6">Asset Inventory</h3>
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Field Name</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Crop</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acres</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Water Used / Allocation (AF)</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Field</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Crop</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Balance</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {fields.map(field => {
-                                const allocation = field.totalWaterAllocation || 0;
-                                const used = field.waterUsed || 0;
-                                const isRunning = waterOrders.some(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
-                                const pendingOrder = waterOrders.find(o => o.fieldId === field.id && (o.status === WaterOrderStatus.Pending || o.status === WaterOrderStatus.Approved));
-                                
-                                return (
-                                <tr 
-                                    key={field.id} 
-                                    className={`cursor-pointer transition-colors ${isRunning ? 'bg-blue-100 hover:bg-blue-200' : 'hover:bg-gray-50'}`}
-                                    onClick={() => setSelectedFieldDetails(field)}
-                                >
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 flex items-center">
-                                        {isRunning && <span className="mr-2 inline-block w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span>}
-                                        {field.name}
-                                    </td>
+                        <tbody className="bg-white divide-y divide-gray-100">
+                            {fields.map(field => (
+                                <tr key={field.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedFieldDetails(field)}>
+                                    <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{field.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.crop}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.acres}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{`${used} / ${allocation}`}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <div className="flex flex-col items-start gap-1">
-                                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRunning ? 'bg-blue-200 text-blue-800' : 'bg-gray-100 text-gray-600'}`}>
-                                                {isRunning ? 'Running' : 'Idle'}
-                                            </span>
-                                            {pendingOrder && (
-                                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isRunning ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
-                                                    Pending: {formatDate(pendingOrder.deliveryStartDate)}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap font-black text-blue-600">{field.waterUsed} / {field.totalWaterAllocation} AF</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); setSelectedFieldForQR(field); }}
-                                            className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                            title={`Generate QR Codes for ${field.name}`}
-                                        >
-                                            <QrCodeIcon className="-ml-0.5 mr-2 h-4 w-4" />
-                                            QR Codes
+                                        <button onClick={(e) => { e.stopPropagation(); setSelectedFieldForQR(field); }} className="text-blue-600 hover:text-blue-800 font-bold uppercase text-[10px] flex items-center gap-1">
+                                            <QrCodeIcon className="h-4 w-4" /> QR Codes
                                         </button>
                                     </td>
                                 </tr>
-                                )
-                            })}
+                            ))}
                         </tbody>
                     </table>
                 </div>
             </div>
-
-            <WaterOrderList orders={myRecentOrders} title="All Recent Water Orders" />
+            <WaterOrderList orders={myRecentOrders} title="Command History" />
         </>
       )}
 
       {/* MODALS */}
-      {alertField && (
-          <WaterUsageAlertModal
-            field={alertField}
-            onClose={() => setAlertField(null)}
-            onUpdate={refreshWaterOrders} // In reality this might need a full fields refresh, using refreshWaterOrders as proxy for global refresh callback logic
-          />
-      )}
-
-      {selectedFieldForQR && (
-        <QRCodeModal
-          field={selectedFieldForQR}
-          onClose={() => setSelectedFieldForQR(null)}
-        />
-      )}
-      
-      {selectedFieldDetails && (
-          <FieldDetailsModal
-            field={selectedFieldDetails}
-            orders={waterOrders}
-            onClose={() => setSelectedFieldDetails(null)}
-            onCreateOrder={() => {
-                setCreateOrderInitialFieldId(selectedFieldDetails.id);
-                // We deliberately do not close the details modal here, but ensure z-index of order modal is higher
-                setIsNewOrderModalOpen(true);
-            }}
-          />
-      )}
-
-      {isNewOrderModalOpen && (
-          <NewWaterOrderModal
-            fields={fields}
-            initialFieldId={createOrderInitialFieldId}
-            onClose={() => {
-                setIsNewOrderModalOpen(false);
-                setCreateOrderInitialFieldId(undefined);
-            }}
-            onOrderCreate={handleManualOrderCreate}
-          />
-      )}
-
-      {isScannerOpen && (
-          <Scanner 
-            onScan={handleIrrigatorScan}
-            onClose={() => setIsScannerOpen(false)}
-          />
-      )}
+      {alertField && <WaterUsageAlertModal field={alertField} onClose={() => setAlertField(null)} onUpdate={refreshWaterOrders} />}
+      {selectedFieldForQR && <QRCodeModal field={selectedFieldForQR} onClose={() => setSelectedFieldForQR(null)} />}
+      {selectedFieldDetails && <FieldDetailsModal field={selectedFieldDetails} orders={waterOrders} onClose={() => setSelectedFieldDetails(null)} onCreateOrder={() => { setCreateOrderInitialFieldId(selectedFieldDetails.id); setIsNewOrderModalOpen(true); }} />}
+      {isNewOrderModalOpen && <NewWaterOrderModal fields={fields} initialFieldId={createOrderInitialFieldId} onClose={() => setIsNewOrderModalOpen(false)} onOrderCreate={handleManualOrderCreate} />}
+      {isScannerOpen && <Scanner onScan={handleIrrigatorScan} onClose={() => setIsScannerOpen(false)} />}
     </div>
   );
 };

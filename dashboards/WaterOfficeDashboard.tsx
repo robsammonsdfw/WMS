@@ -381,11 +381,12 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                     </div>
                     <div className="space-y-1">
                         <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Assign Headgate(s)</label>
+                        {/* Fix: Explicitly type map function parameter to resolve 'unknown' type error for multiple select value extraction */}
                         <select 
                             multiple 
                             value={newFieldHGs} 
                             onChange={e => {
-                                const values = Array.from(e.target.selectedOptions, option => option.value);
+                                const values = Array.from(e.target.selectedOptions, (option: HTMLOptionElement) => option.value);
                                 setNewFieldHGs(values);
                             }}
                             className="w-full px-4 py-2 border border-gray-300 rounded-xl bg-white font-bold h-[48px] overflow-y-auto"
