@@ -1,9 +1,9 @@
 const pg = require("pg");
 
-let dbClient;
+let dbClient = null;
 
 async function initSchema(client) {
-    console.log("Running Schema Initialization...");
+    console.log("Checking/Initializing Database Schema...");
     await client.query(`
         CREATE TABLE IF NOT EXISTS laterals (
             id VARCHAR(255) PRIMARY KEY,
@@ -78,24 +78,51 @@ async function initSchema(client) {
 }
 
 async function getDbClient() {
-    if (dbClient) return dbClient;
+    // 1. Check if we have an existing client and if it's still alive
+    if (dbClient) {
+        try {
+            await dbClient.query('SELECT 1');
+            return dbClient;
+        } catch (e) {
+            console.warn("Existing DB connection is dead or stale. Reconnecting...");
+            try { await dbClient.end(); } catch (err) {}
+            dbClient = null;
+        }
+    }
+
     const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
-    dbClient = new pg.Client({
+    
+    // 2. Validate environment configuration
+    if (!DB_HOST || !DB_PASSWORD || !DB_NAME) {
+        const missing = [];
+        if (!DB_HOST) missing.push("DB_HOST");
+        if (!DB_PASSWORD) missing.push("DB_PASSWORD");
+        if (!DB_NAME) missing.push("DB_NAME");
+        throw new Error(`Database configuration incomplete. Missing variables: ${missing.join(", ")}`);
+    }
+
+    console.log(`Connecting to database at ${DB_HOST}...`);
+
+    const client = new pg.Client({
         host: DB_HOST,
-        port: parseInt(DB_PORT, 10),
+        port: parseInt(DB_PORT || "5432", 10),
         user: DB_USER,
         password: DB_PASSWORD,
         database: DB_NAME,
-        ssl: { rejectUnauthorized: false }
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 5000 // Stop waiting after 5 seconds
     });
+
     try {
-        await dbClient.connect();
-        await initSchema(dbClient);
+        await client.connect();
+        await initSchema(client);
+        dbClient = client; // Success! Store in global for reuse
+        return dbClient;
     } catch (err) {
-        console.error("Error connecting to DB:", err);
+        console.error("FATAL: Database connection failed.", err);
+        dbClient = null; // Ensure we don't store a broken client
         throw err;
     }
-    return dbClient;
 }
 
 exports.handler = async (event) => {
@@ -121,7 +148,16 @@ exports.handler = async (event) => {
     try { 
         client = await getDbClient(); 
     } catch (e) { 
-        return { statusCode: 500, headers, body: JSON.stringify({ message: "Database connection failed." }) }; 
+        console.error("API Error: getDbClient failed", e.message);
+        return { 
+            statusCode: 500, 
+            headers, 
+            body: JSON.stringify({ 
+                message: "Database connection failed.", 
+                details: e.message,
+                hint: "Check Lambda Environment Variables and RDS Security Group rules."
+            }) 
+        }; 
     }
 
     try {
@@ -164,84 +200,4 @@ exports.handler = async (event) => {
                     SELECT f.*, 
                            array_agg(DISTINCT fh.headgate_id) FILTER (WHERE fh.headgate_id IS NOT NULL) as headgate_ids,
                            COALESCE(f.lateral, (SELECT h.lateral_id FROM headgates h JOIN field_headgates fh2 ON h.id = fh2.headgate_id WHERE fh2.field_id = f.id LIMIT 1)) as lateral_resolved,
-                           COALESCE(f.tap_number, (SELECT h.tap_number FROM headgates h JOIN field_headgates fh2 ON h.id = fh2.headgate_id WHERE fh2.field_id = f.id LIMIT 1)) as tap_resolved
-                    FROM fields f 
-                    LEFT JOIN field_headgates fh ON f.id = fh.field_id 
-                    GROUP BY f.id
-                `);
-                return { statusCode: 200, headers, body: JSON.stringify(res.rows.map(row => ({
-                    ...row,
-                    headgateIds: row.headgate_ids || [],
-                    lateral: row.lateral_resolved,
-                    tapNumber: row.tap_resolved
-                }))) };
-            }
-            if (httpMethod === 'POST') {
-                // Implement UPSERT to handle both Create and Update seamlessly
-                await client.query(
-                    `INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, lateral, tap_number) 
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                     ON CONFLICT (id) DO UPDATE SET 
-                        name = EXCLUDED.name,
-                        company_name = EXCLUDED.company_name,
-                        address = EXCLUDED.address,
-                        phone = EXCLUDED.phone,
-                        crop = EXCLUDED.crop,
-                        acres = EXCLUDED.acres,
-                        total_water_allocation = EXCLUDED.total_water_allocation,
-                        water_allotment = EXCLUDED.water_allotment,
-                        lat = EXCLUDED.lat,
-                        lng = EXCLUDED.lng,
-                        owner = EXCLUDED.owner,
-                        lateral = EXCLUDED.lateral,
-                        tap_number = EXCLUDED.tap_number`,
-                    [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber]
-                );
-                
-                // Refresh Headgate Mapping if provided
-                if (body.headgateIds && Array.isArray(body.headgateIds)) {
-                    // Clear existing mappings for this field first
-                    await client.query("DELETE FROM field_headgates WHERE field_id = $1", [body.id]);
-                    for (const hgId of body.headgateIds) {
-                        try {
-                            await client.query("INSERT INTO field_headgates (field_id, headgate_id) VALUES ($1, $2)", [body.id, hgId]);
-                        } catch (e) {
-                            console.log("Headgate not in registry, skipping relational link:", hgId);
-                        }
-                    }
-                }
-                return { statusCode: 201, headers, body: JSON.stringify(body) };
-            }
-        }
-
-        if (path === '/orders') {
-            if (httpMethod === 'GET') {
-                const res = await client.query("SELECT o.*, l.name as lateral_name, h.name as headgate_name FROM water_orders o LEFT JOIN laterals l ON o.lateral_id = l.id LEFT JOIN headgates h ON o.headgate_id = h.id ORDER BY delivery_start_date ASC");
-                return { statusCode: 200, headers, body: JSON.stringify(res.rows) };
-            }
-            if (httpMethod === 'POST') {
-                const id = 'ORD-' + Math.random().toString(36).substr(2, 5).toUpperCase();
-                const lateralId = (body.lateralId && body.lateralId !== '') ? body.lateralId : null;
-                const headgateId = (body.headgateId && body.headgateId !== '') ? body.headgateId : null;
-
-                await client.query(
-                    `INSERT INTO water_orders (id, field_id, field_name, requester, status, order_type, requested_amount, delivery_start_date, lateral_id, headgate_id, tap_number) 
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                    [id, body.fieldId, body.fieldName, body.requester, body.status, body.orderType, body.requestedAmount, body.deliveryStartDate, lateralId, headgateId, body.tapNumber]
-                );
-                return { statusCode: 201, headers, body: JSON.stringify({ id }) };
-            }
-        }
-
-        if (path.startsWith('/orders/') && httpMethod === 'PUT') {
-            const orderId = path.split('/').pop();
-            await client.query("UPDATE water_orders SET status = $1 WHERE id = $2", [body.status, orderId]);
-            return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
-        }
-
-        return { statusCode: 404, headers, body: JSON.stringify({ message: `Path not found: ${httpMethod} ${path}` }) };
-    } catch (err) {
-        console.error("Handler error:", err);
-        return { statusCode: 500, headers, body: JSON.stringify({ message: "Internal server error." }) };
-    }
-};
+                           COALESCE(f.tap_number, (SELECT h.tap_number FROM headgates h JOIN field_headgates fh2 ON h.id = fh2.headgate_id WHERE fh2.field_id = f.id LIMIT
