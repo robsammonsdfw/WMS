@@ -1,9 +1,9 @@
 
-import React, { useMemo, useState } from 'react';
-import { User, WaterOrder, WaterOrderStatus, Field } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { User, WaterOrder, WaterOrderStatus, Field, Lateral } from '../types';
 import { QrCodeIcon, ClockIcon, WaterDropIcon, AdjustmentsIcon, XCircleIcon } from '../components/icons';
 import Scanner from '../components/Scanner';
-import { updateWaterOrder } from '../services/api';
+import { updateWaterOrder, getLaterals } from '../services/api';
 
 interface DitchRiderDashboardProps {
   user: User;
@@ -16,15 +16,46 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   const [isScanning, setIsScanning] = useState(false);
   const [scanTargetOrder, setScanTargetOrder] = useState<WaterOrder | null>(null);
   
-  // Local state for assignments, initialized from user prop but editable
+  // State for all laterals in the system (fetched from DB)
+  const [allSystemLaterals, setAllSystemLaterals] = useState<Lateral[]>([]);
+
+  // Local state for assignments, initially set to user assignments but will update with DB
   const [myLaterals, setMyLaterals] = useState<string[]>(
     (user.assignedLaterals || []).map(l => l.toLowerCase())
   );
+  
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
-  // Derive all unique laterals from the database (Fields + Orders)
+  // Fetch laterals on mount and auto-assign
+  useEffect(() => {
+    getLaterals().then(data => {
+        if (data) {
+            setAllSystemLaterals(data);
+            
+            // Auto-assign ALL laterals to the rider view by default to ensure they see everything
+            // This fixes the issue where only hardcoded 'Lateral A' and 'Lateral 8.13' were showing
+            const allNames = data.map(d => d.name.toLowerCase());
+            const allIds = data.map(d => d.id.toLowerCase());
+            
+            setMyLaterals(prev => {
+                const combined = new Set([...prev, ...allNames, ...allIds]);
+                return Array.from(combined);
+            });
+        }
+    }).catch(console.error);
+  }, []);
+
+  // Derive all unique laterals from the database (Fields + Orders + DB Laterals)
   const availableLaterals = useMemo(() => {
     const lats = new Set<string>();
+    
+    // Add known system laterals from API
+    allSystemLaterals.forEach(l => {
+        if(l.name) lats.add(l.name);
+        if(l.id) lats.add(l.id);
+    });
+
+    // Add inferred from fields (for legacy/direct-type support)
     fields.forEach(f => { 
         if (f.lateral) lats.add(f.lateral); 
         // Also check headgates if field has no direct lateral
@@ -46,7 +77,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     return unique;
-  }, [fields, waterOrders]);
+  }, [fields, waterOrders, allSystemLaterals]);
 
   // Filter Orders based on Local Assignments + Status (Approved OR InProgress)
   const relevantOrders = useMemo(() => {

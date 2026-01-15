@@ -29,7 +29,6 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   const [laterals, setLaterals] = useState<Lateral[]>([]);
   const [headgates, setHeadgates] = useState<Headgate[]>([]);
   const [fields, setFields] = useState<Field[]>([]);
-  const [reportDateRange, setReportDateRange] = useState<'day' | 'week' | 'month'>('week');
   const [isLoading, setIsLoading] = useState(true);
   
   // Admin form state: Laterals
@@ -96,7 +95,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   const handleAddLateral = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newLatId) return alert("Please enter a Rider ID (Lateral ID).");
+      if (!newLatId) return alert("Please enter a Unique Lateral ID.");
       if (!newLatName) return alert("Please enter a Lateral Name.");
       try {
           await createLateral({ id: newLatId, name: newLatName });
@@ -325,8 +324,8 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                             <h4 className="text-lg font-black uppercase tracking-widest">1. Rider / Lateral Registry</h4>
                         </div>
                         <form onSubmit={handleAddLateral} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
-                            <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Rider ID (Lateral ID)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
-                            <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                            <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Unique Lateral ID (e.g. LAT-01)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                            <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name (e.g. VanDoozer)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                             <button type="submit" className="sm:col-span-2 bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700">Add Rider Channel</button>
                         </form>
                     </div>
