@@ -83,6 +83,28 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
     return Object.values(data);
   }, [waterOrders, laterals]);
 
+  // Combined List of Laterals (DB + Legacy from Fields) for Dropdown
+  const combinedLateralOptions = useMemo(() => {
+    const options = [...laterals]; // Start with DB laterals
+    
+    // Scan existing fields for any "lateral" strings that aren't in the DB
+    const existingIds = new Set(laterals.map(l => l.id.toLowerCase()));
+    const existingNames = new Set(laterals.map(l => l.name.toLowerCase()));
+
+    fields.forEach(f => {
+        if (f.lateral) {
+            const latStr = f.lateral.trim();
+            const latLower = latStr.toLowerCase();
+            if (!existingIds.has(latLower) && !existingNames.has(latLower)) {
+                // Add this legacy lateral to options temporarily
+                options.push({ id: latStr, name: latStr });
+                existingIds.add(latLower);
+            }
+        }
+    });
+    return options;
+  }, [laterals, fields]);
+
   const handleUpdateStatus = async (orderId: string, status: WaterOrderStatus) => {
     try {
         await updateWaterOrder(orderId, { status });
@@ -350,7 +372,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                                 <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID (Auto-populates Name/Tap)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500 w-full" />
                                 <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500 w-full">
                                     <option value="">Select Rider/Lateral...</option>
-                                    {laterals.map(l => <option key={l.id} value={l.id}>{l.name} ({l.id})</option>)}
+                                    {combinedLateralOptions.map(l => <option key={l.id} value={l.id}>{l.name} {l.id !== l.name ? `(${l.id})` : ''}</option>)}
                                 </select>
                             </div>
                             <button type="submit" className="bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700">Add Headgate</button>

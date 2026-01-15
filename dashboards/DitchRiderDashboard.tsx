@@ -19,33 +19,48 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   // State for all laterals in the system (fetched from DB)
   const [allSystemLaterals, setAllSystemLaterals] = useState<Lateral[]>([]);
 
-  // Local state for assignments, initially set to user assignments but will update with DB
+  // Local state for assignments. 
   const [myLaterals, setMyLaterals] = useState<string[]>(
     (user.assignedLaterals || []).map(l => l.toLowerCase())
   );
   
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
-  // Fetch laterals on mount and auto-assign
+  // 1. Fetch official registry laterals
+  // 2. Scan active orders for any "legacy" or text-based laterals to ensure they are visible
   useEffect(() => {
-    getLaterals().then(data => {
-        if (data) {
-            setAllSystemLaterals(data);
-            
-            // Auto-assign ALL laterals to the rider view by default to ensure they see everything
-            // This fixes the issue where only hardcoded 'Lateral A' and 'Lateral 8.13' were showing
-            const allNames = data.map(d => d.name.toLowerCase());
-            const allIds = data.map(d => d.id.toLowerCase());
-            
-            setMyLaterals(prev => {
-                const combined = new Set([...prev, ...allNames, ...allIds]);
-                return Array.from(combined);
-            });
-        }
-    }).catch(console.error);
-  }, []);
+    const syncLaterals = async () => {
+        let dbLaterals: Lateral[] = [];
+        try {
+            dbLaterals = await getLaterals() || [];
+            setAllSystemLaterals(dbLaterals);
+        } catch (e) { console.error(e); }
 
-  // Derive all unique laterals from the database (Fields + Orders + DB Laterals)
+        const activeOrderLaterals = new Set<string>();
+        waterOrders.forEach(o => {
+            if (o.lateralId) activeOrderLaterals.add(o.lateralId.toLowerCase());
+            if (o.lateral) activeOrderLaterals.add(o.lateral.toLowerCase());
+        });
+
+        const dbIds = dbLaterals.map(d => d.id.toLowerCase());
+        const dbNames = dbLaterals.map(d => d.name.toLowerCase());
+
+        setMyLaterals(prev => {
+            // Combine previous (user assigned) + DB Registry + Found in Orders
+            const combined = new Set([
+                ...prev, 
+                ...dbIds, 
+                ...dbNames, 
+                ...Array.from(activeOrderLaterals)
+            ]);
+            return Array.from(combined);
+        });
+    };
+
+    syncLaterals();
+  }, [waterOrders]); // Re-run if orders change to catch new incoming orders
+
+  // Derive all unique laterals from the database (Fields + Orders + DB Laterals) for the config menu
   const availableLaterals = useMemo(() => {
     const lats = new Set<string>();
     
@@ -81,9 +96,9 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
 
   // Filter Orders based on Local Assignments + Status (Approved OR InProgress)
   const relevantOrders = useMemo(() => {
-      // If no laterals assigned, show nothing (or everything if we wanted default behavior)
-      if (myLaterals.length === 0) return [];
-
+      // If we have orders but no laterals selected, we should probably show them if they are orphaned, 
+      // but the auto-sync above handles this by adding them to myLaterals.
+      
       return waterOrders.filter(order => {
           // Check Status: We want Approved (Turn On task) OR InProgress (Turn Off task)
           const isActionable = order.status === WaterOrderStatus.Approved || order.status === WaterOrderStatus.InProgress;
@@ -93,8 +108,10 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
           const orderLatId = (order.lateralId || '').toLowerCase();
           const orderLatName = (order.lateral || '').toLowerCase();
           
+          // If the order has NO lateral assigned, show it anyway so it isn't lost
+          if (!orderLatId && !orderLatName) return true;
+
           const isAssigned = myLaterals.includes(orderLatId) || myLaterals.includes(orderLatName);
-          
           return isAssigned;
       });
   }, [waterOrders, myLaterals]);
@@ -215,9 +232,9 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                     Rider: {user.name}
                 </div>
                 {myLaterals.length > 0 ? (
-                    myLaterals.map(l => (
+                    myLaterals.slice(0, 5).map(l => (
                         <div key={l} className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1">
-                            Lat {l}
+                            {l.replace('lateral', 'Lat')}
                             <button onClick={() => toggleLateral(l)} className="hover:text-green-900"><XCircleIcon className="h-3 w-3" /></button>
                         </div>
                     ))
@@ -225,6 +242,9 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                     <div className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-[10px] font-black uppercase tracking-widest">
                         No Run Selected
                     </div>
+                )}
+                {myLaterals.length > 5 && (
+                    <span className="text-[10px] text-gray-500 font-bold">+{myLaterals.length - 5} more</span>
                 )}
             </div>
         </div>
@@ -271,7 +291,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                                                         {isTurnOn ? 'TURN ON' : 'TURN OFF'}
                                                     </span>
                                                     <span className="px-2 py-0.5 bg-gray-900 text-white text-[9px] font-black uppercase rounded tracking-widest">
-                                                        LATERAL {order.lateral || order.lateralId}
+                                                        {(order.lateral || order.lateralId) ? `LATERAL ${order.lateral || order.lateralId}` : 'UNASSIGNED LATERAL'}
                                                     </span>
                                                 </div>
                                                 
