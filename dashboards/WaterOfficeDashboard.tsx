@@ -32,7 +32,6 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   const [isLoading, setIsLoading] = useState(true);
   
   // Admin form state: Laterals
-  const [newLatId, setNewLatId] = useState('');
   const [newLatName, setNewLatName] = useState('');
 
   // Admin form state: Headgates
@@ -95,14 +94,26 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   const handleAddLateral = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newLatId) return alert("Please enter a Unique Lateral ID.");
       if (!newLatName) return alert("Please enter a Lateral Name.");
+
+      // Auto-generate ID based on Name (First 3 chars + sequential number)
+      // e.g. "VanDoozer" -> "VAN-01". If "VAN-01" exists, try "VAN-02"
+      const prefix = newLatName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 3).toUpperCase() || "LAT";
+      let counter = 1;
+      let generatedId = `${prefix}-${counter.toString().padStart(2, '0')}`;
+      
+      const existingIds = laterals.map(l => l.id);
+      while (existingIds.includes(generatedId)) {
+          counter++;
+          generatedId = `${prefix}-${counter.toString().padStart(2, '0')}`;
+      }
+
       try {
-          await createLateral({ id: newLatId, name: newLatName });
-          setNewLatId(''); setNewLatName('');
+          await createLateral({ id: generatedId, name: newLatName });
+          setNewLatName('');
           await fetchData();
           await refreshFields();
-          alert("Lateral registered successfully.");
+          alert(`Lateral registered successfully! Assigned ID: ${generatedId}`);
       } catch (err: any) { alert(err.message); }
   };
 
@@ -321,12 +332,11 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                     <div className="space-y-6">
                         <div className="flex items-center space-x-3 text-blue-600">
                             <UserGroupIcon className="h-6 w-6" />
-                            <h4 className="text-lg font-black uppercase tracking-widest">1. Rider / Lateral Registry</h4>
+                            <h4 className="text-lg font-black uppercase tracking-widest">1. Lateral Registry</h4>
                         </div>
-                        <form onSubmit={handleAddLateral} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
-                            <input value={newLatId} onChange={e => setNewLatId(e.target.value)} placeholder="Unique Lateral ID (e.g. LAT-01)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                        <form onSubmit={handleAddLateral} className="grid grid-cols-1 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
                             <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name (e.g. VanDoozer)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
-                            <button type="submit" className="sm:col-span-2 bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700">Add Rider Channel</button>
+                            <button type="submit" className="bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700">Add Lateral</button>
                         </form>
                     </div>
 
@@ -340,7 +350,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                                 <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID (Auto-populates Name/Tap)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500 w-full" />
                                 <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500 w-full">
                                     <option value="">Select Rider/Lateral...</option>
-                                    {laterals.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                                    {laterals.map(l => <option key={l.id} value={l.id}>{l.name} ({l.id})</option>)}
                                 </select>
                             </div>
                             <button type="submit" className="bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700">Add Headgate</button>
