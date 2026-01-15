@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { User, WaterOrder, WaterOrderStatus, Field } from '../types';
-import { QrCodeIcon, TrashIcon } from '../components/icons';
+import { QrCodeIcon, ClockIcon, WaterDropIcon } from '../components/icons';
 import Scanner from '../components/Scanner';
 import { updateWaterOrder } from '../services/api';
 
@@ -14,63 +14,68 @@ interface DitchRiderDashboardProps {
 
 const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders }) => {
   const [activeTab, setActiveTab] = useState<'start' | 'stop'>('start');
-  const [turnOnIds, setTurnOnIds] = useState<string[]>([]);
-  const [turnOffIds, setTurnOffIds] = useState<string[]>([]);
-  
   const [isScanning, setIsScanning] = useState(false);
   const [scanTargetOrder, setScanTargetOrder] = useState<WaterOrder | null>(null);
 
-  // Filter orders eligible for actions
-  const approvedOrders = useMemo(() => waterOrders.filter(o => o.status === WaterOrderStatus.Approved), [waterOrders]);
-  const inProgressOrders = useMemo(() => waterOrders.filter(o => o.status === WaterOrderStatus.InProgress), [waterOrders]);
+  // 1. Get Assigned Laterals
+  const assignedLaterals = useMemo(() => {
+      // Normalize to handle potential ID mismatches or lack of assignment
+      const lats = user.assignedLaterals || [];
+      return lats.map(l => l.toLowerCase());
+  }, [user]);
 
-  // Determine which orders can be added to the current list (excluding ones already added)
-  const availableOptions = useMemo(() => {
-    if (activeTab === 'start') {
-        return approvedOrders.filter(o => !turnOnIds.includes(o.id));
-    } else {
-        return inProgressOrders.filter(o => !turnOffIds.includes(o.id));
-    }
-  }, [activeTab, approvedOrders, inProgressOrders, turnOnIds, turnOffIds]);
+  // 2. Filter Orders based on Role (Assigned Lateral) + Status
+  const relevantOrders = useMemo(() => {
+      const targetStatus = activeTab === 'start' ? WaterOrderStatus.Approved : WaterOrderStatus.InProgress;
+      
+      return waterOrders.filter(order => {
+          // Check Status
+          if (order.status !== targetStatus) return false;
 
-  // Determine the current list of orders to display
-  const currentListIds = activeTab === 'start' ? turnOnIds : turnOffIds;
-  const currentListOrders = useMemo(() => {
-      const sourceList = activeTab === 'start' ? approvedOrders : inProgressOrders;
-      // We look up from sourceList to ensure we have the full object, 
-      // although finding it in 'waterOrders' is safer if status changed recently, 
-      // but 'sourceList' is sufficient for the builder context.
-      return currentListIds.map(id => waterOrders.find(o => o.id === id)).filter((o): o is WaterOrder => !!o);
-  }, [currentListIds, activeTab, approvedOrders, inProgressOrders, waterOrders]);
+          // Check Lateral Assignment
+          // We check both lateralId and lateral property to be safe against data inconsistencies
+          const orderLatId = (order.lateralId || '').toLowerCase();
+          const orderLatName = (order.lateral || '').toLowerCase();
+          
+          const isAssigned = assignedLaterals.includes(orderLatId) || assignedLaterals.includes(orderLatName);
+          
+          return isAssigned;
+      });
+  }, [waterOrders, activeTab, assignedLaterals]);
 
-  // Group by Lateral
-  const ordersByLateral = useMemo(() => {
-    return currentListOrders.reduce((acc, order) => {
-      const lateral = order.lateral || 'Unassigned';
-      if (!acc[lateral]) {
-        acc[lateral] = [];
-      }
-      acc[lateral].push(order);
-      return acc;
-    }, {} as Record<string, WaterOrder[]>);
-  }, [currentListOrders]);
+  // 3. Group by Date
+  const groupedOrders = useMemo(() => {
+      const groups: Record<string, WaterOrder[]> = {};
+      
+      relevantOrders.forEach(order => {
+          // Use Start Date for Turn On, End Date for Turn Off
+          // If Turn Off has no End Date, group under 'Unscheduled Stop'
+          let dateKey = activeTab === 'start' ? order.deliveryStartDate : order.deliveryEndDate;
+          
+          if (!dateKey) {
+              dateKey = 'Unscheduled';
+          } else {
+              // Ensure clean date string YYYY-MM-DD
+              dateKey = dateKey.split('T')[0];
+          }
 
-  const handleAddOrder = (orderId: string) => {
-      if (!orderId) return;
-      if (activeTab === 'start') {
-          setTurnOnIds(prev => [...prev, orderId]);
-      } else {
-          setTurnOffIds(prev => [...prev, orderId]);
-      }
-  };
+          if (!groups[dateKey]) {
+              groups[dateKey] = [];
+          }
+          groups[dateKey].push(order);
+      });
 
-  const handleRemoveOrder = (orderId: string) => {
-      if (activeTab === 'start') {
-          setTurnOnIds(prev => prev.filter(id => id !== orderId));
-      } else {
-          setTurnOffIds(prev => prev.filter(id => id !== orderId));
-      }
-  };
+      return groups;
+  }, [relevantOrders, activeTab]);
+
+  // Sort dates: Real dates first (chronological), then 'Unscheduled'
+  const sortedDates = useMemo(() => {
+      return Object.keys(groupedOrders).sort((a, b) => {
+          if (a === 'Unscheduled') return 1;
+          if (b === 'Unscheduled') return -1;
+          return new Date(a).getTime() - new Date(b).getTime();
+      });
+  }, [groupedOrders]);
 
   const initiateScan = (order: WaterOrder) => {
       setScanTargetOrder(order);
@@ -86,7 +91,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
       
       // Validation
       if (fieldId !== scanTargetOrder.fieldId) {
-          alert(`Error: Scanned QR code for ${fieldName} does not match the selected order for ${scanTargetOrder.fieldName}.`);
+          alert(`Error: Scanned QR code for ${fieldName} does not match the selected order.`);
           return;
       }
 
@@ -96,16 +101,14 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
               return;
           }
           await updateWaterOrder(scanTargetOrder.id, { ...scanTargetOrder, status: WaterOrderStatus.InProgress });
-          setTurnOnIds(prev => prev.filter(id => id !== scanTargetOrder.id)); // Remove from todo list
-          alert(`SUCCESS: Water Delivery STARTED for ${fieldName}. Alerts sent.`);
+          alert(`SUCCESS: Water Delivery STARTED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
       } else {
           if (action !== 'end-delivery') {
               alert("Error: Scanned a 'Start' QR code but trying to Stop delivery.");
               return;
           }
           await updateWaterOrder(scanTargetOrder.id, { ...scanTargetOrder, status: WaterOrderStatus.Completed });
-          setTurnOffIds(prev => prev.filter(id => id !== scanTargetOrder.id)); // Remove from todo list
-           alert(`SUCCESS: Water Delivery STOPPED for ${fieldName}. Alerts sent.`);
+           alert(`SUCCESS: Water Delivery STOPPED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
       }
 
       await refreshWaterOrders();
@@ -118,101 +121,108 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
     }
   };
 
+  const formatDateDisplay = (dateStr: string) => {
+      if (dateStr === 'Unscheduled') return 'Unscheduled / Asap';
+      const date = new Date(dateStr);
+      // Check if date is today
+      const today = new Date();
+      const isToday = date.getDate() === today.getDate() &&
+                      date.getMonth() === today.getMonth() &&
+                      date.getFullYear() === today.getFullYear();
+      
+      if (isToday) return 'Today';
+
+      return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(date);
+  };
+
   return (
-    <div className="space-y-6 max-w-2xl mx-auto pb-24">
-        <div className="text-center">
-            <h2 className="text-2xl font-bold text-gray-800">Ditch Rider Control</h2>
-            <p className="text-gray-600">Build your task list for {user.name}</p>
+    <div className="space-y-6 max-w-3xl mx-auto pb-24">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+            <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Ditch Rider Control</h2>
+            <div className="flex items-center gap-2 mt-2">
+                <div className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-[10px] font-black uppercase tracking-widest">
+                    Rider: {user.name}
+                </div>
+                <div className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-[10px] font-black uppercase tracking-widest">
+                    Assignments: {user.assignedLaterals?.join(', ') || 'None'}
+                </div>
+            </div>
         </div>
 
         {/* Tabs */}
-        <div className="bg-white rounded-lg shadow p-1 flex">
+        <div className="bg-white rounded-[2rem] shadow-lg p-1.5 flex ring-1 ring-gray-100">
             <button 
                 onClick={() => setActiveTab('start')}
-                className={`flex-1 py-4 text-center rounded-md font-bold text-xl transition-colors ${activeTab === 'start' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
+                className={`flex-1 py-4 text-center rounded-[1.5rem] font-black text-sm uppercase tracking-[0.2em] transition-all ${activeTab === 'start' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'text-gray-400 hover:bg-gray-50'}`}
             >
-                Turn ON
+                Turn ON Queue
             </button>
             <button 
                 onClick={() => setActiveTab('stop')}
-                className={`flex-1 py-4 text-center rounded-md font-bold text-xl transition-colors ${activeTab === 'stop' ? 'bg-red-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-100'}`}
+                className={`flex-1 py-4 text-center rounded-[1.5rem] font-black text-sm uppercase tracking-[0.2em] transition-all ${activeTab === 'stop' ? 'bg-red-600 text-white shadow-lg shadow-red-200' : 'text-gray-400 hover:bg-gray-50'}`}
             >
-                Turn OFF
+                Turn OFF Queue
             </button>
         </div>
-      
-        {/* Dropdown Selector */}
-        <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-                {activeTab === 'start' ? 'Add Headgate to "Turn ON" List' : 'Add Headgate to "Turn OFF" List'}
-            </label>
-            <select 
-                className="block w-full pl-3 pr-10 py-3 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                onChange={(e) => {
-                    handleAddOrder(e.target.value);
-                    e.target.value = ""; // Reset dropdown
-                }}
-                defaultValue=""
-            >
-                <option value="" disabled>Select a Headgate / Field...</option>
-                {availableOptions.map(order => (
-                    <option key={order.id} value={order.id}>
-                        {order.fieldName} (Lat {order.lateral}) - {order.requestedAmount} AF
-                    </option>
-                ))}
-                {availableOptions.length === 0 && (
-                    <option disabled>No more available orders</option>
-                )}
-            </select>
-        </div>
 
-        {/* Task List */}
-        <div>
-            {Object.keys(ordersByLateral).length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-                    <p className="text-gray-500 text-lg">Your list is empty.</p>
-                    <p className="text-gray-400 text-sm">Select headgates above to build your run.</p>
+        {/* Task List grouped by Date */}
+        <div className="space-y-8">
+            {sortedDates.length === 0 ? (
+                <div className="text-center py-16 bg-white/50 rounded-3xl border-2 border-dashed border-gray-200">
+                    <WaterDropIcon className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+                    <p className="text-gray-500 font-bold uppercase text-xs tracking-widest">No orders scheduled for your laterals.</p>
                 </div>
             ) : (
-                Object.keys(ordersByLateral).sort().map((lateral) => (
-                    <div key={lateral} className="mb-6">
-                        <h3 className="text-lg font-bold text-gray-700 mb-2 px-2 bg-gray-200 py-1 rounded-md inline-block">
-                            Lateral {lateral}
-                        </h3>
-                        <div className="space-y-3">
-                            {ordersByLateral[lateral].map(order => (
-                                <div key={order.id} className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200 relative">
-                                    <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                sortedDates.map((date) => (
+                    <div key={date} className="animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex items-center gap-4 mb-4 ml-2">
+                            <ClockIcon className="h-5 w-5 text-gray-400" />
+                            <h3 className="text-lg font-black text-gray-700 uppercase tracking-wide">
+                                {formatDateDisplay(date)}
+                                {date !== 'Unscheduled' && <span className="ml-3 text-xs text-gray-400 font-bold tracking-normal">{date}</span>}
+                            </h3>
+                        </div>
+
+                        <div className="space-y-4">
+                            {groupedOrders[date].map(order => (
+                                <div key={order.id} className="bg-white rounded-3xl shadow-md overflow-hidden border border-gray-100 relative group">
+                                    <div className={`absolute left-0 top-0 bottom-0 w-3 ${activeTab === 'start' ? 'bg-blue-500' : 'bg-red-500'}`}></div>
+                                    <div className="p-6 pl-9 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+                                        
+                                        {/* Left: Infrastructure Info (Primary) */}
                                         <div className="flex-1">
-                                            <div className="flex justify-between">
-                                                 <h4 className="text-xl font-extrabold text-gray-900">{order.fieldName}</h4>
-                                                 <button 
-                                                    onClick={() => handleRemoveOrder(order.id)}
-                                                    className="text-gray-400 hover:text-red-500 p-1 sm:hidden"
-                                                 >
-                                                    <TrashIcon className="h-6 w-6" />
-                                                 </button>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="px-2 py-0.5 bg-gray-900 text-white text-[9px] font-black uppercase rounded tracking-widest">
+                                                    LATERAL {order.lateral || order.lateralId}
+                                                </span>
+                                                <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-[9px] font-black uppercase rounded tracking-widest">
+                                                    {order.tapNumber ? `TAP ${order.tapNumber}` : `HEADGATE ${order.headgateId || 'Main'}`}
+                                                </span>
                                             </div>
-                                            <p className="text-gray-600 text-sm">Tap: <span className="font-mono font-bold">{order.tapNumber || 'N/A'}</span></p>
-                                            <p className="text-gray-600 text-sm">Amt: <span className="font-mono font-bold">{order.requestedAmount} AF</span></p>
+                                            <div className="flex items-baseline gap-2">
+                                                <h4 className="text-3xl font-black text-gray-900 leading-none">
+                                                    {(order.requestedInches || (order.requestedAmount * 25)).toFixed(0)}
+                                                    <span className="text-lg text-gray-400 ml-1">IN</span>
+                                                </h4>
+                                                <span className="text-sm font-bold text-gray-400 uppercase">
+                                                    / {order.requestedAmount} ACFT
+                                                </span>
+                                            </div>
+                                            
+                                            {/* Field Name is now Secondary */}
+                                            <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mt-2">
+                                                Field: {order.fieldName} <span className="mx-1">•</span> Owner: {order.requester}
+                                            </p>
                                         </div>
 
-                                        <div className="flex items-center gap-3">
-                                            <button 
-                                                onClick={() => handleRemoveOrder(order.id)}
-                                                className="hidden sm:inline-flex p-3 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                                                title="Remove from list"
-                                            >
-                                                <TrashIcon className="h-6 w-6" />
-                                            </button>
-                                            <button 
-                                                onClick={() => initiateScan(order)}
-                                                className={`flex-1 sm:flex-none px-6 py-3 rounded-lg font-bold text-lg text-white shadow-sm flex items-center justify-center space-x-2 transition-transform active:scale-95 ${activeTab === 'start' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'}`}
-                                            >
-                                                <QrCodeIcon className="h-6 w-6" />
-                                                <span>SCAN QR</span>
-                                            </button>
-                                        </div>
+                                        {/* Right: Action */}
+                                        <button 
+                                            onClick={() => initiateScan(order)}
+                                            className={`w-full sm:w-auto px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] text-white shadow-lg flex items-center justify-center gap-3 transition-transform active:scale-95 ${activeTab === 'start' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-100' : 'bg-red-600 hover:bg-red-700 shadow-red-100'}`}
+                                        >
+                                            <QrCodeIcon className="h-5 w-5" />
+                                            <span>Scan {activeTab === 'start' ? 'Start' : 'Stop'}</span>
+                                        </button>
                                     </div>
                                 </div>
                             ))}
