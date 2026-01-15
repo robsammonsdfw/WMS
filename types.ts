@@ -87,6 +87,7 @@ export interface WaterOrder {
   orderType: WaterOrderType;
   orderDate: string;
   deliveryStartDate: string;
+  deliveryEndDate?: string;
   requestedAmount: number;
   requestedInches?: number;
   lateralId: string;

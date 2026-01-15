@@ -24,18 +24,25 @@ async function initSchema(client) {
             order_date TIMESTAMP DEFAULT NOW(), 
             requested_amount NUMERIC, 
             delivery_start_date DATE, 
+            delivery_end_date DATE,
             lateral_id VARCHAR(255), 
             headgate_id VARCHAR(255), 
             tap_number VARCHAR(50)
         );
     `);
 
-    // Migration: Attempt to drop constraints if they exist from previous versions
+    // Migration: Attempt to drop constraints if they exist from previous versions and add missing columns
     try {
         await client.query(`ALTER TABLE water_orders DROP CONSTRAINT IF EXISTS water_orders_lateral_id_fkey`);
         await client.query(`ALTER TABLE water_orders DROP CONSTRAINT IF EXISTS water_orders_headgate_id_fkey`);
     } catch (e) {
         console.log("Migration (Drop Constraints) note:", e.message);
+    }
+
+    try {
+        await client.query(`ALTER TABLE water_orders ADD COLUMN IF NOT EXISTS delivery_end_date DATE`);
+    } catch (e) {
+        console.log("Migration (Add Column) note:", e.message);
     }
 
     schemaDone = true;
@@ -123,7 +130,7 @@ exports.handler = async (e) => {
 
         if (path === '/orders' && method === 'POST') {
             const id = 'ORD-' + Math.random().toString(36).substr(2, 5).toUpperCase();
-            await client.query(`INSERT INTO water_orders (id, field_id, field_name, requester, status, order_type, requested_amount, delivery_start_date, lateral_id, headgate_id, tap_number) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [id, body.fieldId, body.fieldName, body.requester, body.status, body.orderType, body.requestedAmount, body.deliveryStartDate, body.lateralId||null, body.headgateId||null, body.tapNumber]);
+            await client.query(`INSERT INTO water_orders (id, field_id, field_name, requester, status, order_type, requested_amount, delivery_start_date, lateral_id, headgate_id, tap_number, delivery_end_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [id, body.fieldId, body.fieldName, body.requester, body.status, body.orderType, body.requestedAmount, body.deliveryStartDate, body.lateralId||null, body.headgateId||null, body.tapNumber, body.deliveryEndDate || null]);
             return { statusCode: 201, headers: resHeaders, body: JSON.stringify({id}) };
         }
 

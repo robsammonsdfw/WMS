@@ -5,16 +5,18 @@ import { XCircleIcon, DocumentAddIcon } from './icons';
 
 interface NewWaterOrderModalProps {
   onClose: () => void;
-  onOrderCreate: (data: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; }) => void;
+  onOrderCreate: (data: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; deliveryEndDate?: string; }) => void;
   fields: Field[];
   initialFieldId?: string;
+  initialOrderType: WaterOrderType;
 }
 
-const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate, fields, initialFieldId }) => {
+const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate, fields, initialFieldId, initialOrderType }) => {
   const [fieldId, setFieldId] = useState<string>(initialFieldId || '');
-  const [orderType, setOrderType] = useState<WaterOrderType>(WaterOrderType.TurnOn);
+  // Removed orderType state as it is fixed by the button click (initialOrderType)
   const [inchesRequested, setInchesRequested] = useState<string>('');
   const [deliveryStartDate, setDeliveryStartDate] = useState<string>('');
+  const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
   const [error, setError] = useState('');
 
   const selectedField = useMemo(() => fields.find(f => f.id === fieldId), [fieldId, fields]);
@@ -36,7 +38,7 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
     
     const inches = parseFloat(inchesRequested);
     
-    if (!fieldId || !orderType || !inchesRequested || inches <= 0 || !deliveryStartDate) {
+    if (!fieldId || !inchesRequested || inches <= 0 || !deliveryStartDate) {
       setError('Please fill out all fields with valid information.');
       return;
     }
@@ -51,11 +53,14 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
 
     onOrderCreate({
       fieldId,
-      orderType,
+      orderType: initialOrderType,
       requestedAmount: parseFloat(amountAF.toFixed(2)),
       deliveryStartDate,
+      deliveryEndDate: deliveryEndDate || undefined,
     });
   };
+
+  const isTurnOn = initialOrderType === WaterOrderType.TurnOn;
 
   return (
     <div 
@@ -77,10 +82,12 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
           <XCircleIcon className="h-8 w-8" />
         </button>
         <div className="flex items-center space-x-3 mb-4">
-            <div className="bg-blue-100 p-2 rounded-full">
-                <DocumentAddIcon className="h-6 w-6 text-blue-600" />
+            <div className={`p-2 rounded-full ${isTurnOn ? 'bg-blue-100 text-blue-600' : 'bg-red-100 text-red-600'}`}>
+                <DocumentAddIcon className="h-6 w-6" />
             </div>
-            <h2 id="new-order-title" className="text-2xl font-bold text-gray-800">Create New Water Order</h2>
+            <h2 id="new-order-title" className="text-2xl font-bold text-gray-800">
+                {isTurnOn ? 'Start Water Delivery' : 'Stop Water Delivery'}
+            </h2>
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -106,27 +113,12 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
                     </select>
                 )}
             </div>
-
-            <div>
-                <label htmlFor="orderType" className="block text-sm font-medium text-gray-700">Order Type</label>
-                <select
-                    id="orderType"
-                    value={orderType}
-                    onChange={(e) => setOrderType(e.target.value as WaterOrderType)}
-                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                >
-                    {Object.values(WaterOrderType).map((type) => (
-                        <option key={type} value={type}>{type}</option>
-                    ))}
-                </select>
-            </div>
             
             {selectedField && headgateInfo && (
                 <div className="p-3 bg-gray-50 rounded-md border border-gray-200 text-sm grid grid-cols-2 gap-2">
                     <p><span className="font-medium text-gray-600">Lateral:</span> {headgateInfo.lateral || 'N/A'}</p>
                     <p><span className="font-medium text-gray-600">Tap Number:</span> {headgateInfo.tapNumber || 'N/A'}</p>
                     <p><span className="font-medium text-gray-600">Acres:</span> {selectedField.acres}</p>
-                    {/* Add note if multiple headgates exist */}
                     {selectedField.headgates && selectedField.headgates.length > 1 && (
                          <p className="col-span-2 text-xs text-blue-600 italic">
                              *Field has {selectedField.headgates.length} headgates available. Order defaults to primary.
@@ -166,13 +158,27 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
                 </div>
+                {/* Optional Stop Date */}
+                <div>
+                    <label htmlFor="endDate" className="block text-sm font-medium text-gray-700">Delivery Stop Date (Optional)</label>
+                    <input
+                        type="date"
+                        id="endDate"
+                        value={deliveryEndDate}
+                        onChange={(e) => setDeliveryEndDate(e.target.value)}
+                        min={deliveryStartDate || today}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    />
+                </div>
             </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
             <div className="flex justify-end space-x-3 pt-4">
                 <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Submit Order</button>
+                <button type="submit" className={`px-6 py-2 text-white rounded-md transition-colors ${isTurnOn ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                    {isTurnOn ? 'Start Water' : 'Stop Water'}
+                </button>
             </div>
         </form>
       </div>

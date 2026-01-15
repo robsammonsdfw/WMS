@@ -1,13 +1,13 @@
 
 import React from 'react';
-import { Field, WaterOrder, WaterOrderStatus } from '../types';
+import { Field, WaterOrder, WaterOrderStatus, WaterOrderType } from '../types';
 import { XCircleIcon, DocumentAddIcon } from './icons';
 
 interface FieldDetailsModalProps {
   field: Field;
   orders: WaterOrder[];
   onClose: () => void;
-  onCreateOrder: () => void;
+  onCreateOrder: (type: WaterOrderType) => void;
 }
 
 const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, onClose, onCreateOrder }) => {
@@ -199,18 +199,18 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
         {/* Right Sidebar: Actions */}
         <div className="w-full md:w-64 bg-gray-50 p-8 border-l-4 border-white flex flex-col gap-6">
             <button 
-                onClick={onCreateOrder}
-                className="w-full aspect-square bg-green-500 text-white p-6 rounded-full font-black uppercase text-[10px] tracking-[0.2em] flex flex-col items-center justify-center gap-2 hover:bg-green-600 transition-all shadow-xl shadow-green-100 text-center"
+                onClick={() => onCreateOrder(WaterOrderType.TurnOn)}
+                className="w-full aspect-square bg-blue-600 text-white p-6 rounded-full font-black uppercase text-[10px] tracking-[0.2em] flex flex-col items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 text-center"
             >
                 <DocumentAddIcon className="h-8 w-8" />
-                NEW WATER ORDER
+                TURN ON WATER
             </button>
             
             <button 
                 disabled={!isRunning}
-                onClick={onCreateOrder}
+                onClick={() => onCreateOrder(WaterOrderType.TurnOff)}
                 className={`w-full aspect-square p-6 rounded-full font-black uppercase text-[10px] tracking-[0.2em] flex flex-col items-center justify-center gap-2 transition-all text-center
-                    ${isRunning ? 'bg-red-500 text-white shadow-xl shadow-red-100 hover:bg-red-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
+                    ${isRunning ? 'bg-red-600 text-white shadow-xl shadow-red-100 hover:bg-red-700' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
                 `}
             >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
