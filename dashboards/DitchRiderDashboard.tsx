@@ -201,15 +201,26 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
     }
   };
 
+  // Helper to get local date string YYYY-MM-DD
+  const getLocalTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const formatDateDisplay = (dateStr: string) => {
       if (dateStr === 'Unscheduled') return 'Unscheduled / Asap';
-      const date = new Date(dateStr);
-      const today = new Date();
-      const isToday = date.getDate() === today.getDate() &&
-                      date.getMonth() === today.getMonth() &&
-                      date.getFullYear() === today.getFullYear();
       
-      if (isToday) return 'Today';
+      const todayStr = getLocalTodayStr();
+      if (dateStr === todayStr) return 'Today';
+      
+      // Parse YYYY-MM-DD components explicitly to avoid UTC conversion issues
+      const [y, m, d] = dateStr.split('-').map(Number);
+      // Create local date object
+      const date = new Date(y, m - 1, d);
+      
       return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(date);
   };
 

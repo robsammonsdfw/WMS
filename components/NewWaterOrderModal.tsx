@@ -13,14 +13,23 @@ interface NewWaterOrderModalProps {
 
 const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrderCreate, fields, initialFieldId, initialOrderType }) => {
   const [fieldId, setFieldId] = useState<string>(initialFieldId || '');
-  // Removed orderType state as it is fixed by the button click (initialOrderType)
   const [inchesRequested, setInchesRequested] = useState<string>('');
   const [deliveryStartDate, setDeliveryStartDate] = useState<string>('');
   const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
   const [error, setError] = useState('');
 
   const selectedField = useMemo(() => fields.find(f => f.id === fieldId), [fieldId, fields]);
-  const today = new Date().toISOString().split('T')[0];
+  
+  // Get today's date in LOCAL timezone (YYYY-MM-DD)
+  // New Date() gives local time, but toISOString() converts to UTC.
+  // We construct the string manually to ensure it stays in the user's timezone.
+  const today = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
 
   // Derive primary headgate info
   const headgateInfo = useMemo(() => {

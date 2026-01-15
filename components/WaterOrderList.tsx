@@ -36,7 +36,7 @@ const WaterOrderList: React.FC<WaterOrderListProps> = ({ orders, title, actions 
             <tr>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Field</th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Delivery Date</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount (AF)</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               {actions && <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>}
@@ -52,7 +52,12 @@ const WaterOrderList: React.FC<WaterOrderListProps> = ({ orders, title, actions 
                 <tr key={order.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{order.id}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.fieldName}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.orderDate}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span className="font-bold text-gray-900">{order.deliveryStartDate}</span>
+                        {order.orderDate && (
+                            <span className="block text-[10px] text-gray-400">Created: {order.orderDate.split('T')[0]}</span>
+                        )}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.requestedAmount}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getStatusPill(order.status)}</td>
                     {actions && <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{actions(order)}</td>}
