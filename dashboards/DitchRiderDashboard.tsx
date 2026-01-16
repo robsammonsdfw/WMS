@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { User, WaterOrder, WaterOrderStatus, Field, Lateral } from '../types';
+import { User, WaterOrder, WaterOrderStatus, WaterOrderType, Field, Lateral } from '../types';
 import { QrCodeIcon, ClockIcon, WaterDropIcon, AdjustmentsIcon, XCircleIcon, CheckCircleIcon } from '../components/icons';
 import Scanner from '../components/Scanner';
 import { updateWaterOrder, getLaterals } from '../services/api';
@@ -96,11 +96,8 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
 
   // Filter Orders based on Local Assignments + Status (Approved OR InProgress)
   const relevantOrders = useMemo(() => {
-      // If we have orders but no laterals selected, we should probably show them if they are orphaned, 
-      // but the auto-sync above handles this by adding them to myLaterals.
-      
       return waterOrders.filter(order => {
-          // Check Status: We want Approved (Turn On task) OR InProgress (Turn Off task)
+          // Check Status: We want Approved (Pending Task) OR InProgress (Active Task)
           const isActionable = order.status === WaterOrderStatus.Approved || order.status === WaterOrderStatus.InProgress;
           if (!isActionable) return false;
 
@@ -122,9 +119,12 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
       
       relevantOrders.forEach(order => {
           let dateKey = '';
+          // If it's a Turn Off order, the relevant date is usually the End Date (or start date if explicit Turn Off record)
+          // Since our data model uses deliveryStartDate as the primary "Action Date", we use that for Approved.
           if (order.status === WaterOrderStatus.Approved) {
               dateKey = order.deliveryStartDate;
           } else {
+              // For InProgress orders, we are looking at when it ends
               dateKey = order.deliveryEndDate || '';
           }
           
@@ -164,12 +164,26 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   };
 
   const handleManualAction = async (order: WaterOrder) => {
-      if (!window.confirm(`Confirm action for ${order.fieldName}? This simulates a QR code scan.`)) return;
+      const isTurnOff = order.orderType === WaterOrderType.TurnOff;
+      const isApproved = order.status === WaterOrderStatus.Approved;
+      
+      let actionName = 'Update';
+      if (isApproved) actionName = isTurnOff ? 'Stop' : 'Start';
+      else actionName = 'Stop';
+
+      if (!window.confirm(`Manual Override: Confirm "${actionName}" for ${order.fieldName}?`)) return;
 
       try {
           if (order.status === WaterOrderStatus.Approved) {
-              await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.InProgress });
+              if (isTurnOff) {
+                  // Pending Turn Off -> Completed
+                   await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.Completed });
+              } else {
+                  // Pending Turn On -> In Progress
+                   await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.InProgress });
+              }
           } else if (order.status === WaterOrderStatus.InProgress) {
+              // Running -> Completed
               await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.Completed });
           }
           await refreshWaterOrders();
@@ -189,15 +203,29 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
           alert(`Error: Scanned QR code for ${fieldName} does not match the selected order.`);
           return;
       }
+      
+      const isTurnOffType = scanTargetOrder.orderType === WaterOrderType.TurnOff;
 
       if (scanTargetOrder.status === WaterOrderStatus.Approved) {
-          if (action !== 'start-delivery') {
-              alert("Error: Scanned a 'Stop' QR code but trying to Start delivery.");
-              return;
+          // If the order is "Turn Off", we expect an end-delivery scan
+          if (isTurnOffType) {
+              if (action !== 'end-delivery') {
+                  alert("Error: Scanned a 'Start' QR code but this is a Turn Off order.");
+                  return;
+              }
+              await updateWaterOrder(scanTargetOrder.id, { ...scanTargetOrder, status: WaterOrderStatus.Completed });
+              alert(`SUCCESS: Water Delivery STOPPED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
+          } else {
+              // Standard Turn On Order
+              if (action !== 'start-delivery') {
+                  alert("Error: Scanned a 'Stop' QR code but trying to Start delivery.");
+                  return;
+              }
+              await updateWaterOrder(scanTargetOrder.id, { ...scanTargetOrder, status: WaterOrderStatus.InProgress });
+              alert(`SUCCESS: Water Delivery STARTED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
           }
-          await updateWaterOrder(scanTargetOrder.id, { ...scanTargetOrder, status: WaterOrderStatus.InProgress });
-          alert(`SUCCESS: Water Delivery STARTED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
       } else {
+          // If In Progress, we are stopping it
           if (action !== 'end-delivery') {
               alert("Error: Scanned a 'Start' QR code but trying to Stop delivery.");
               return;
@@ -231,9 +259,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
       const todayStr = getLocalTodayStr();
       if (dateStr === todayStr) return 'Today';
       
-      // Parse YYYY-MM-DD components explicitly to avoid UTC conversion issues
       const [y, m, d] = dateStr.split('-').map(Number);
-      // Create local date object
       const date = new Date(y, m - 1, d);
       
       return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(date);
@@ -302,22 +328,46 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
 
                         <div className="space-y-4">
                             {groupedOrders[date].map(order => {
-                                // Logic Update:
-                                // Approved (Pending) -> Red (Water is currently OFF)
-                                // InProgress (Running) -> Blue (Water is currently ON)
-                                const isRunning = order.status === WaterOrderStatus.InProgress;
-                                const themeBg = isRunning ? 'bg-blue-600' : 'bg-red-600';
-                                const themeShadow = isRunning ? 'shadow-blue-100' : 'shadow-red-100';
+                                // --- VISUAL LOGIC ---
+                                
+                                // 1. Sidebar Color (Type of Order)
+                                // Turn On = Blue. Turn Off = Red.
+                                const isTurnOffType = order.orderType === WaterOrderType.TurnOff;
+                                const barColor = isTurnOffType ? 'bg-red-600' : 'bg-blue-600';
+                                const shadowColor = isTurnOffType ? 'shadow-red-100' : 'shadow-blue-100';
+
+                                // 2. Widget Status (Current Water State)
+                                // If InProgress -> Water is Running (Blue).
+                                // If Approved (Pending) -> 
+                                //    If Type is Turn On -> Water is currently OFF (Red).
+                                //    If Type is Turn Off -> Water is currently ON (Blue).
+                                let isWaterRunning = false;
+                                if (order.status === WaterOrderStatus.InProgress) {
+                                    isWaterRunning = true;
+                                } else if (order.status === WaterOrderStatus.Approved) {
+                                    isWaterRunning = isTurnOffType; 
+                                }
+
+                                const widgetBg = isWaterRunning ? 'bg-blue-600' : 'bg-red-600';
+                                const widgetText = isWaterRunning ? 'WATER RUNNING' : 'WATER OFF';
+
+                                // 3. Action Text
+                                let actionText = '';
+                                if (order.status === WaterOrderStatus.Approved) {
+                                    actionText = isTurnOffType ? 'Stop' : 'Start';
+                                } else {
+                                    actionText = 'Stop';
+                                }
 
                                 return (
                                     <div key={order.id} className="bg-white rounded-3xl shadow-md overflow-hidden border border-gray-100 relative group">
-                                        <div className={`absolute left-0 top-0 bottom-0 w-3 ${themeBg} transition-colors duration-500`}></div>
+                                        <div className={`absolute left-0 top-0 bottom-0 w-3 ${barColor} transition-colors duration-500`}></div>
                                         <div className="p-6 pl-9 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
                                             
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-2 mb-2">
-                                                    <span className={`px-2 py-0.5 text-white text-[9px] font-black uppercase rounded tracking-widest ${themeBg} transition-colors duration-500`}>
-                                                        {isRunning ? 'WATER RUNNING' : 'WATER OFF'}
+                                                    <span className={`px-2 py-0.5 text-white text-[9px] font-black uppercase rounded tracking-widest ${widgetBg} transition-colors duration-500`}>
+                                                        {widgetText}
                                                     </span>
                                                     <span className="px-2 py-0.5 bg-gray-900 text-white text-[9px] font-black uppercase rounded tracking-widest">
                                                         {(order.lateral || order.lateralId) ? `LATERAL ${order.lateral || order.lateralId}` : 'UNASSIGNED LATERAL'}
@@ -348,17 +398,17 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                                             <div className="flex flex-col gap-2 w-full sm:w-auto">
                                                 <button 
                                                     onClick={() => initiateScan(order)}
-                                                    className={`w-full sm:w-auto px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] text-white shadow-lg flex items-center justify-center gap-3 transition-all active:scale-95 ${themeBg} hover:brightness-110 ${themeShadow}`}
+                                                    className={`w-full sm:w-auto px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] text-white shadow-lg flex items-center justify-center gap-3 transition-all active:scale-95 ${barColor} hover:brightness-110 ${shadowColor}`}
                                                 >
                                                     <QrCodeIcon className="h-5 w-5" />
-                                                    <span>Scan {isRunning ? 'Stop' : 'Start'}</span>
+                                                    <span>Scan {actionText}</span>
                                                 </button>
                                                 
                                                 <button 
                                                     onClick={() => handleManualAction(order)}
                                                     className="w-full text-center text-[10px] font-bold text-gray-400 hover:text-gray-600 hover:bg-gray-50 py-2 rounded-xl transition-colors uppercase tracking-widest"
                                                 >
-                                                    Manual {isRunning ? 'Stop' : 'Start'}
+                                                    Manual {actionText}
                                                 </button>
                                             </div>
                                         </div>
