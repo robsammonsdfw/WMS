@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { User, WaterOrder, WaterOrderStatus, Field, Lateral } from '../types';
-import { QrCodeIcon, ClockIcon, WaterDropIcon, AdjustmentsIcon, XCircleIcon } from '../components/icons';
+import { QrCodeIcon, ClockIcon, WaterDropIcon, AdjustmentsIcon, XCircleIcon, CheckCircleIcon } from '../components/icons';
 import Scanner from '../components/Scanner';
 import { updateWaterOrder, getLaterals } from '../services/api';
 
@@ -162,6 +162,21 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
       setScanTargetOrder(order);
       setIsScanning(true);
   };
+
+  const handleManualAction = async (order: WaterOrder) => {
+      if (!window.confirm(`Confirm action for ${order.fieldName}? This simulates a QR code scan.`)) return;
+
+      try {
+          if (order.status === WaterOrderStatus.Approved) {
+              await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.InProgress });
+          } else if (order.status === WaterOrderStatus.InProgress) {
+              await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.Completed });
+          }
+          await refreshWaterOrders();
+      } catch (e) {
+          alert("Failed to update order status");
+      }
+  };
   
   const handleScan = async (data: string) => {
     setIsScanning(false);
@@ -287,19 +302,22 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
 
                         <div className="space-y-4">
                             {groupedOrders[date].map(order => {
-                                const isTurnOn = order.status === WaterOrderStatus.Approved;
-                                const themeBg = isTurnOn ? 'bg-blue-600' : 'bg-red-600';
-                                const themeShadow = isTurnOn ? 'shadow-blue-100' : 'shadow-red-100';
+                                // Logic Update:
+                                // Approved (Pending) -> Red (Water is currently OFF)
+                                // InProgress (Running) -> Blue (Water is currently ON)
+                                const isRunning = order.status === WaterOrderStatus.InProgress;
+                                const themeBg = isRunning ? 'bg-blue-600' : 'bg-red-600';
+                                const themeShadow = isRunning ? 'shadow-blue-100' : 'shadow-red-100';
 
                                 return (
                                     <div key={order.id} className="bg-white rounded-3xl shadow-md overflow-hidden border border-gray-100 relative group">
-                                        <div className={`absolute left-0 top-0 bottom-0 w-3 ${themeBg}`}></div>
+                                        <div className={`absolute left-0 top-0 bottom-0 w-3 ${themeBg} transition-colors duration-500`}></div>
                                         <div className="p-6 pl-9 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
                                             
                                             <div className="flex-1">
                                                 <div className="flex items-center gap-2 mb-2">
-                                                    <span className={`px-2 py-0.5 text-white text-[9px] font-black uppercase rounded tracking-widest ${themeBg}`}>
-                                                        {isTurnOn ? 'TURN ON' : 'TURN OFF'}
+                                                    <span className={`px-2 py-0.5 text-white text-[9px] font-black uppercase rounded tracking-widest ${themeBg} transition-colors duration-500`}>
+                                                        {isRunning ? 'WATER RUNNING' : 'WATER OFF'}
                                                     </span>
                                                     <span className="px-2 py-0.5 bg-gray-900 text-white text-[9px] font-black uppercase rounded tracking-widest">
                                                         {(order.lateral || order.lateralId) ? `LATERAL ${order.lateral || order.lateralId}` : 'UNASSIGNED LATERAL'}
@@ -327,13 +345,22 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                                                 </p>
                                             </div>
 
-                                            <button 
-                                                onClick={() => initiateScan(order)}
-                                                className={`w-full sm:w-auto px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] text-white shadow-lg flex items-center justify-center gap-3 transition-transform active:scale-95 ${themeBg} hover:brightness-110 ${themeShadow}`}
-                                            >
-                                                <QrCodeIcon className="h-5 w-5" />
-                                                <span>Scan {isTurnOn ? 'Start' : 'Stop'}</span>
-                                            </button>
+                                            <div className="flex flex-col gap-2 w-full sm:w-auto">
+                                                <button 
+                                                    onClick={() => initiateScan(order)}
+                                                    className={`w-full sm:w-auto px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] text-white shadow-lg flex items-center justify-center gap-3 transition-all active:scale-95 ${themeBg} hover:brightness-110 ${themeShadow}`}
+                                                >
+                                                    <QrCodeIcon className="h-5 w-5" />
+                                                    <span>Scan {isRunning ? 'Stop' : 'Start'}</span>
+                                                </button>
+                                                
+                                                <button 
+                                                    onClick={() => handleManualAction(order)}
+                                                    className="w-full text-center text-[10px] font-bold text-gray-400 hover:text-gray-600 hover:bg-gray-50 py-2 rounded-xl transition-colors uppercase tracking-widest"
+                                                >
+                                                    Manual {isRunning ? 'Stop' : 'Start'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 );
