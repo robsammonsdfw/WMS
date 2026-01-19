@@ -1,17 +1,16 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { WaterOrder, WaterOrderStatus, User, Lateral, Headgate, UserRole, WaterOrderType, Field } from '../types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { WaterOrder, WaterOrderStatus, User, Lateral, Headgate, UserRole, Field } from '../types';
 import WaterOrderList from '../components/WaterOrderList';
 import DashboardCard from '../components/DashboardCard';
 import { 
-    ClockIcon, CheckCircleIcon, RefreshIcon, WaterDropIcon, 
-    DocumentReportIcon, UserGroupIcon, ChevronDownIcon, 
-    XCircleIcon, PlusIcon, TrashIcon, ChartBarIcon as ViewGridIcon
+    ClockIcon, WaterDropIcon, UserGroupIcon, ChevronDownIcon, 
+    RefreshIcon, ChartBarIcon as ViewGridIcon, TrashIcon
 } from '../components/icons';
 import { 
     updateWaterOrder, getLaterals, getHeadgates, getFields,
-    createLateral, createHeadgate, createField, deleteField, resetDatabase 
+    createLateral, createHeadgate, createField, deleteField 
 } from '../services/api';
 import { USERS } from '../constants';
 
@@ -22,6 +21,8 @@ interface WaterOfficeDashboardProps {
 }
 
 type Tab = 'overview' | 'riders' | 'admin';
+type AnalyticsGrouping = 'lateral' | 'rider';
+type AnalyticsTimeframe = 'today' | 'week' | 'month';
 
 const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders, refreshWaterOrders, refreshFields }) => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -30,15 +31,15 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   const [headgates, setHeadgates] = useState<Headgate[]>([]);
   const [fields, setFields] = useState<Field[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Admin form state: Laterals
-  const [newLatName, setNewLatName] = useState('');
 
-  // Admin form state: Headgates
+  // Analytics State
+  const [grouping, setGrouping] = useState<AnalyticsGrouping>('lateral');
+  const [timeframe, setTimeframe] = useState<AnalyticsTimeframe>('week');
+  
+  // Admin form states
+  const [newLatName, setNewLatName] = useState('');
   const [newHGId, setNewHGId] = useState('');
   const [newHGLat, setNewHGLat] = useState('');
-
-  // Admin form state: Fields
   const [newFieldId, setNewFieldId] = useState('');
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldCrop, setNewFieldCrop] = useState('');
@@ -69,25 +70,105 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   const ditchRiders = useMemo(() => USERS.filter(u => u.role === UserRole.DitchRider), []);
   const featuredRiders = ditchRiders.slice(0, 3);
 
-  const lateralReportData = useMemo(() => {
-    const data: Record<string, { name: string, inches: number, count: number }> = {};
-    laterals.forEach(l => {
-        data[l.id] = { name: l.name, inches: 0, count: 0 };
-    });
-    waterOrders.forEach(o => {
-        if (data[o.lateralId]) {
-            data[o.lateralId].inches += (o.requestedAmount || 0) * 25;
-            data[o.lateralId].count += 1;
+  // --- ANALYTICS LOGIC ---
+  const analyticsData = useMemo(() => {
+    const dataMap: Record<string, { name: string; runningAF: number; newOrdersAF: number }> = {};
+
+    // Helper to check date range
+    const isInTimeframe = (dateStr: string) => {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        if (timeframe === 'today') {
+            return date >= startOfDay;
+        } else if (timeframe === 'week') {
+            const startOfWeek = new Date(startOfDay);
+            startOfWeek.setDate(startOfDay.getDate() - 7);
+            return date >= startOfWeek;
+        } else { // month
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            return date >= startOfMonth;
+        }
+    };
+
+    // Helper to get group key and name
+    const getGroupInfo = (order: WaterOrder) => {
+        if (grouping === 'lateral') {
+            const latId = order.lateralId || order.lateral || 'Unassigned';
+            // Find official name from registry, or use ID. 
+            // If ID not in registry, group as 'Other/Legacy' to clean up chart? 
+            // For now, we display what we have but try to match registry.
+            const registryLat = laterals.find(l => l.id === latId || l.name === latId);
+            if (registryLat) return { key: registryLat.id, name: registryLat.name };
+            
+            // If it's a legacy lateral not in DB, mark it clearly or group it
+            if (latId === 'Unassigned') return { key: 'Unassigned', name: 'Unassigned' };
+            return { key: 'Other', name: 'Other / Legacy' }; 
+        } else {
+            // Group by Rider
+            // Logic: Find Rider assigned to this lateral
+            // This is tricky if order doesn't store riderId directly. 
+            // We infer from USERS list based on lateral name.
+            const latName = order.lateralId || order.lateral || '';
+            const rider = ditchRiders.find(u => u.assignedLaterals?.some(al => al.toLowerCase() === latName.toLowerCase()));
+            if (rider) return { key: rider.id.toString(), name: rider.name.split(' ')[0] }; // First name only for chart space
+            return { key: 'unassigned', name: 'Unassigned' };
+        }
+    };
+
+    // Initialize map based on Registry to ensure empty columns show up (optional, but good for completeness)
+    if (grouping === 'lateral') {
+        laterals.forEach(l => {
+            dataMap[l.id] = { name: l.name, runningAF: 0, newOrdersAF: 0 };
+        });
+        dataMap['Other'] = { name: 'Other / Legacy', runningAF: 0, newOrdersAF: 0 };
+    } else {
+        ditchRiders.forEach(r => {
+            dataMap[r.id.toString()] = { name: r.name.split(' ')[0], runningAF: 0, newOrdersAF: 0 };
+        });
+        dataMap['unassigned'] = { name: 'Unassigned', runningAF: 0, newOrdersAF: 0 };
+    }
+
+    waterOrders.forEach(order => {
+        const { key, name } = getGroupInfo(order);
+        
+        if (!dataMap[key]) {
+            dataMap[key] = { name, runningAF: 0, newOrdersAF: 0 };
+        }
+
+        const amount = order.requestedAmount || 0;
+
+        // 1. Calculate Running Water (Currently In Progress)
+        // "Running" is a state, usually independent of "New Order" timeframe, 
+        // but for this view, we show ALL currently running water.
+        if (order.status === WaterOrderStatus.InProgress) {
+            dataMap[key].runningAF += amount;
+        }
+
+        // 2. Calculate New Orders (Pending/Approved) WITHIN Timeframe
+        if ((order.status === WaterOrderStatus.Pending || order.status === WaterOrderStatus.Approved) && order.deliveryStartDate) {
+            if (isInTimeframe(order.deliveryStartDate)) {
+                dataMap[key].newOrdersAF += amount;
+            }
         }
     });
-    return Object.values(data);
-  }, [waterOrders, laterals]);
 
-  // Combined List of Laterals (DB + Legacy from Fields) for Dropdown
+    // Remove 'Other' or 'Unassigned' if empty to keep chart clean
+    if (dataMap['Other']?.runningAF === 0 && dataMap['Other']?.newOrdersAF === 0) delete dataMap['Other'];
+    if (dataMap['unassigned']?.runningAF === 0 && dataMap['unassigned']?.newOrdersAF === 0) delete dataMap['unassigned'];
+
+    return Object.values(dataMap);
+  }, [waterOrders, laterals, ditchRiders, grouping, timeframe]);
+
+  const totalRunningAF = waterOrders
+    .filter(o => o.status === WaterOrderStatus.InProgress)
+    .reduce((sum, o) => sum + (o.requestedAmount || 0), 0);
+  
+  const pendingCount = waterOrders.filter(o => o.status === WaterOrderStatus.Pending).length;
+
   const combinedLateralOptions = useMemo(() => {
-    const options = [...laterals]; // Start with DB laterals
-    
-    // Scan existing fields for any "lateral" strings that aren't in the DB
+    const options = [...laterals];
     const existingIds = new Set(laterals.map(l => l.id.toLowerCase()));
     const existingNames = new Set(laterals.map(l => l.name.toLowerCase()));
 
@@ -96,7 +177,6 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
             const latStr = f.lateral.trim();
             const latLower = latStr.toLowerCase();
             if (!existingIds.has(latLower) && !existingNames.has(latLower)) {
-                // Add this legacy lateral to options temporarily
                 options.push({ id: latStr, name: latStr });
                 existingIds.add(latLower);
             }
@@ -117,19 +197,14 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
   const handleAddLateral = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newLatName) return alert("Please enter a Lateral Name.");
-
-      // Auto-generate ID based on Name (First 3 chars + sequential number)
-      // e.g. "VanDoozer" -> "VAN-01". If "VAN-01" exists, try "VAN-02"
       const prefix = newLatName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 3).toUpperCase() || "LAT";
       let counter = 1;
       let generatedId = `${prefix}-${counter.toString().padStart(2, '0')}`;
-      
       const existingIds = laterals.map(l => l.id);
       while (existingIds.includes(generatedId)) {
           counter++;
           generatedId = `${prefix}-${counter.toString().padStart(2, '0')}`;
       }
-
       try {
           await createLateral({ id: generatedId, name: newLatName });
           setNewLatName('');
@@ -143,14 +218,8 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
       e.preventDefault();
       if (!newHGId) return alert("Please enter a Gate ID.");
       if (!newHGLat) return alert("Please select a Rider/Lateral for this headgate.");
-      
       try {
-          await createHeadgate({ 
-              id: newHGId, 
-              name: newHGId, 
-              lateralId: newHGLat, 
-              tapNumber: newHGId 
-          });
+          await createHeadgate({ id: newHGId, name: newHGId, lateralId: newHGLat, tapNumber: newHGId });
           setNewHGId(''); setNewHGLat('');
           await fetchData();
           await refreshFields();
@@ -160,46 +229,40 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   const handleAddField = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newFieldId) return alert("Please enter a Field ID.");
-      if (!newFieldName) return alert("Please enter a Field Name.");
+      if (!newFieldId || !newFieldName) return alert("Please fill required fields.");
       try {
           await createField({ 
-              id: newFieldId, 
-              name: newFieldName, 
-              crop: newFieldCrop, 
-              acres: parseFloat(newFieldAcresValue) || 0,
-              location: newFieldLoc,
-              totalWaterAllocation: parseFloat(newFieldAlloc) || 0,
-              owner: newFieldOwner,
+              id: newFieldId, name: newFieldName, crop: newFieldCrop, 
+              acres: parseFloat(newFieldAcresValue) || 0, location: newFieldLoc,
+              totalWaterAllocation: parseFloat(newFieldAlloc) || 0, owner: newFieldOwner,
               headgateIds: newFieldHGs
           });
-          setNewFieldId(''); setNewFieldName(''); setNewFieldCrop(''); setNewFieldAcresValue(''); setNewFieldOwner(''); setNewFieldLoc(''); setNewFieldAlloc(''); setNewFieldHGs([]);
+          setNewFieldId(''); setNewFieldName(''); setNewFieldCrop(''); setNewFieldAcresValue(''); 
+          setNewFieldOwner(''); setNewFieldLoc(''); setNewFieldAlloc(''); setNewFieldHGs([]);
           await fetchData();
           await refreshFields();
-          alert("Field registered and linked successfully.");
+          alert("Field registered successfully.");
       } catch (err: any) { alert(err.message); }
   };
 
   const handleDeleteSingleField = async (fieldId: string, fieldName: string) => {
-    if (window.confirm(`Are you sure you want to delete the field registry for "${fieldName}"? This will also remove its water order history.`)) {
+    if (window.confirm(`Delete field "${fieldName}"?`)) {
         try {
             await deleteField(fieldId);
             await fetchData();
             await refreshWaterOrders();
             await refreshFields();
-            alert(`Field "${fieldName}" deleted.`);
-        } catch (err: any) {
-            alert("Delete failed: " + (err.message || "Unknown error"));
-        }
+        } catch (err: any) { alert("Delete failed: " + err.message); }
     }
   };
 
   const renderOverview = () => (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500">
+        {/* Top KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <DashboardCard
-              title="Current Water Ordered"
-              value={`${lateralReportData.reduce((s, c) => s + c.inches, 0).toLocaleString()} In`}
+              title="Total Active Water (Running)"
+              value={`${totalRunningAF.toFixed(1)} AF`}
               icon={<WaterDropIcon className="h-6 w-6 text-blue-600" />}
               color="bg-blue-100"
             />
@@ -221,47 +284,108 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
             </div>
             <DashboardCard
               title="Orders Pending Review"
-              value={waterOrders.filter(o => o.status === WaterOrderStatus.Pending).length}
+              value={pendingCount}
               icon={<ClockIcon className="h-6 w-6 text-yellow-600" />}
               color="bg-yellow-100"
             />
         </div>
 
-        <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+        {/* Main Analytics Graph */}
+        <div className="bg-white p-8 rounded-[2rem] shadow-xl border border-gray-100">
+            <div className="flex flex-col xl:flex-row justify-between items-center mb-8 gap-6">
                 <div>
-                    <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Water Orders by Lateral</h3>
-                    <p className="text-sm text-gray-500">Total requested Miner's Inches per distribution channel</p>
+                    <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Resource Distribution Analytics</h3>
+                    <p className="text-sm text-gray-500 mt-1">Real-time breakdown of active usage vs. upcoming demand.</p>
+                </div>
+                
+                {/* Analytics Controls */}
+                <div className="flex flex-wrap gap-3 items-center justify-center bg-gray-50 p-2 rounded-2xl">
+                    <div className="flex items-center bg-white rounded-xl shadow-sm border border-gray-200 px-1">
+                        <button 
+                            onClick={() => setGrouping('lateral')} 
+                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${grouping === 'lateral' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            By Lateral
+                        </button>
+                        <button 
+                            onClick={() => setGrouping('rider')} 
+                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${grouping === 'rider' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            By Ditch Rider
+                        </button>
+                    </div>
+
+                    <div className="h-8 w-px bg-gray-300 mx-2 hidden sm:block"></div>
+
+                    <div className="flex items-center bg-white rounded-xl shadow-sm border border-gray-200 px-1">
+                        <button 
+                            onClick={() => setTimeframe('today')} 
+                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${timeframe === 'today' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            Today
+                        </button>
+                        <button 
+                            onClick={() => setTimeframe('week')} 
+                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${timeframe === 'week' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            This Week
+                        </button>
+                        <button 
+                            onClick={() => setTimeframe('month')} 
+                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${timeframe === 'month' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            This Month
+                        </button>
+                    </div>
                 </div>
             </div>
-            <div className="h-[350px] w-full">
+
+            <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={lateralReportData}>
+                    <BarChart data={analyticsData} barGap={0}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12, fontWeight: 700}} />
-                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12}} />
-                        <Tooltip cursor={{fill: '#f9fafb'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
-                        <Bar dataKey="inches" fill="#2563eb" radius={[6, 6, 0, 0]} name="Total Inches" barSize={60} />
+                        <XAxis 
+                            dataKey="name" 
+                            axisLine={false} 
+                            tickLine={false} 
+                            tick={{fill: '#6b7280', fontSize: 11, fontWeight: 700, textTransform: 'uppercase'}} 
+                            dy={10}
+                        />
+                        <YAxis 
+                            axisLine={false} 
+                            tickLine={false} 
+                            tick={{fill: '#6b7280', fontSize: 12}} 
+                            label={{ value: 'Acre-Feet (AF)', angle: -90, position: 'insideLeft', style: { fill: '#9ca3af', fontSize: 10, fontWeight: 700 } }} 
+                        />
+                        <Tooltip 
+                            cursor={{fill: '#f9fafb'}} 
+                            contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px'}}
+                            labelStyle={{fontSize: '14px', fontWeight: 900, color: '#111827', textTransform: 'uppercase', marginBottom: '8px'}}
+                        />
+                        <Legend 
+                            verticalAlign="top" 
+                            height={36} 
+                            iconType="circle"
+                            formatter={(value) => <span className="text-xs font-bold text-gray-500 uppercase ml-1 mr-4">{value}</span>}
+                        />
+                        <Bar dataKey="runningAF" name="Currently Running" fill="#2563eb" radius={[0, 0, 4, 4]} barSize={40}>
+                             {analyticsData.map((entry, index) => (
+                                <Cell key={`cell-running-${index}`} fill="#3b82f6" />
+                            ))}
+                        </Bar>
+                        <Bar dataKey="newOrdersAF" name="New Orders (Scheduled)" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
+            <div className="mt-4 text-center">
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                    Showing {timeframe} data grouped by {grouping === 'lateral' ? 'Lateral Channel' : 'Assigned Ditch Rider'}
+                </p>
+            </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-800 mb-6 uppercase tracking-tight">Delivery Run Activity</h3>
-                <div className="h-[250px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={lateralReportData}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                            <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                            <YAxis axisLine={false} tickLine={false} />
-                            <Tooltip />
-                            <Line type="monotone" dataKey="count" stroke="#10b981" strokeWidth={4} dot={{r: 6, fill: '#10b981', strokeWidth: 2, stroke: '#fff'}} name="Task Count" />
-                        </LineChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
+        {/* Action Queue */}
+        <div className="w-full">
             <WaterOrderList 
                 orders={waterOrders.filter(o => o.status === WaterOrderStatus.Pending)} 
                 title="Immediate Approval Queue"
@@ -357,7 +481,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                             <h4 className="text-lg font-black uppercase tracking-widest">1. Lateral Registry</h4>
                         </div>
                         <form onSubmit={handleAddLateral} className="grid grid-cols-1 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
-                            <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name (e.g. VanDoozer)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                            <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name (e.g. West Main)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                             <button type="submit" className="bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700">Add Lateral</button>
                         </form>
                     </div>
@@ -369,7 +493,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                         </div>
                         <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID (Auto-populates Name/Tap)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500 w-full" />
+                                <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500 w-full" />
                                 <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500 w-full">
                                     <option value="">Select Rider/Lateral...</option>
                                     {combinedLateralOptions.map(l => <option key={l.id} value={l.id}>{l.name} {l.id !== l.name ? `(${l.id})` : ''}</option>)}
