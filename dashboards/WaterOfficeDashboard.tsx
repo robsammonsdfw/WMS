@@ -348,7 +348,8 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                             dataKey="name" 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{fill: '#6b7280', fontSize: 11, fontWeight: 700, textTransform: 'uppercase'}} 
+                            tick={{fill: '#6b7280', fontSize: 11, fontWeight: 700}} 
+                            tickFormatter={(value) => value.toUpperCase()}
                             dy={10}
                         />
                         <YAxis 
