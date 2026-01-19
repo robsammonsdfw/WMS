@@ -18,6 +18,8 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
   const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
   const [error, setError] = useState('');
 
+  const isTurnOn = initialOrderType === WaterOrderType.TurnOn;
+
   const selectedField = useMemo(() => fields.find(f => f.id === fieldId), [fieldId, fields]);
   
   // Get today's date in LOCAL timezone (YYYY-MM-DD)
@@ -45,11 +47,19 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
     e.preventDefault();
     setError('');
     
-    const inches = parseFloat(inchesRequested);
-    
-    if (!fieldId || !inchesRequested || inches <= 0 || !deliveryStartDate) {
-      setError('Please fill out all fields with valid information.');
+    // Basic validation
+    if (!fieldId || !deliveryStartDate) {
+      setError('Please select a field and a date.');
       return;
+    }
+    
+    // Specific validation for Turn On
+    if (isTurnOn) {
+        const inches = parseFloat(inchesRequested);
+        if (!inchesRequested || inches <= 0) {
+             setError('Please enter a valid amount of water (inches).');
+             return;
+        }
     }
     
     if (!selectedField) {
@@ -58,18 +68,19 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
     }
 
     // Convert Miner's Inches to Acre-Feet (AF) based on rule: 25 Inches = 1 AF
-    const amountAF = inches / 25;
+    let amountAF = 0;
+    if (isTurnOn && inchesRequested) {
+        amountAF = parseFloat(inchesRequested) / 25;
+    }
 
     onOrderCreate({
       fieldId,
       orderType: initialOrderType,
       requestedAmount: parseFloat(amountAF.toFixed(2)),
       deliveryStartDate,
-      deliveryEndDate: deliveryEndDate || undefined,
+      deliveryEndDate: isTurnOn ? (deliveryEndDate || undefined) : undefined,
     });
   };
-
-  const isTurnOn = initialOrderType === WaterOrderType.TurnOn;
 
   return (
     <div 
@@ -137,27 +148,32 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                 <div>
-                    <label htmlFor="inches" className="block text-sm font-medium text-gray-700">Inches Requested</label>
-                    <input
-                        type="number"
-                        id="inches"
-                        value={inchesRequested}
-                        onChange={(e) => setInchesRequested(e.target.value)}
-                        min="0.1"
-                        step="0.1"
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        placeholder="e.g., 25"
-                    />
-                    {inchesRequested && (
-                        <p className="text-xs text-gray-500 mt-1">
-                            {/* Conversion: 25 Inches = 1 AF */}
-                            ≈ {(parseFloat(inchesRequested) / 25).toFixed(2)} AF
-                        </p>
-                    )}
-                </div>
-                <div>
-                    <label htmlFor="date" className="block text-sm font-medium text-gray-700">Delivery Start Date</label>
+                 {isTurnOn && (
+                     <div>
+                        <label htmlFor="inches" className="block text-sm font-medium text-gray-700">Inches Requested</label>
+                        <input
+                            type="number"
+                            id="inches"
+                            value={inchesRequested}
+                            onChange={(e) => setInchesRequested(e.target.value)}
+                            min="0.1"
+                            step="0.1"
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            placeholder="e.g., 25"
+                        />
+                        {inchesRequested && (
+                            <p className="text-xs text-gray-500 mt-1">
+                                {/* Conversion: 25 Inches = 1 AF */}
+                                ≈ {(parseFloat(inchesRequested) / 25).toFixed(2)} AF
+                            </p>
+                        )}
+                    </div>
+                 )}
+                
+                <div className={!isTurnOn ? 'sm:col-span-2' : ''}>
+                    <label htmlFor="date" className="block text-sm font-medium text-gray-700">
+                        {isTurnOn ? 'Delivery Start Date' : 'Turn Off Date'}
+                    </label>
                     <input
                         type="date"
                         id="date"
@@ -167,18 +183,21 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
                 </div>
-                {/* Optional Stop Date */}
-                <div>
-                    <label htmlFor="endDate" className="block text-sm font-medium text-gray-700">Delivery Stop Date (Optional)</label>
-                    <input
-                        type="date"
-                        id="endDate"
-                        value={deliveryEndDate}
-                        onChange={(e) => setDeliveryEndDate(e.target.value)}
-                        min={deliveryStartDate || today}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    />
-                </div>
+
+                {/* Optional Stop Date - Only show for Turn On */}
+                {isTurnOn && (
+                    <div>
+                        <label htmlFor="endDate" className="block text-sm font-medium text-gray-700">Delivery Stop Date (Optional)</label>
+                        <input
+                            type="date"
+                            id="endDate"
+                            value={deliveryEndDate}
+                            onChange={(e) => setDeliveryEndDate(e.target.value)}
+                            min={deliveryStartDate || today}
+                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        />
+                    </div>
+                )}
             </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
