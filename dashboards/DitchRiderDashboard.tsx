@@ -117,7 +117,18 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   const groupedOrders = useMemo(() => {
       const groups: Record<string, WaterOrder[]> = {};
       
+      // LOGIC FIX: Identify scheduled "Turn Off" orders to prevent "Unscheduled/ASAP" duplicates.
+      // If a field has a scheduled Turn Off (Approved + TurnOff Type), we should NOT show
+      // the "Running" (InProgress) state as a separate "Unscheduled" task, because the task IS scheduled.
+      const scheduledTurnOffSignatures = new Set<string>();
+
       relevantOrders.forEach(order => {
+          if (order.status === WaterOrderStatus.Approved && order.orderType === WaterOrderType.TurnOff) {
+               // Create a signature matching Field + Lateral + Tap to ensure uniqueness
+               const sig = `${order.fieldId}-${order.lateralId || order.lateral}-${order.tapNumber || order.headgateId}`;
+               scheduledTurnOffSignatures.add(sig);
+          }
+
           let dateKey = '';
           // If it's a Turn Off order, the relevant date is usually the End Date (or start date if explicit Turn Off record)
           // Since our data model uses deliveryStartDate as the primary "Action Date", we use that for Approved.
@@ -139,6 +150,25 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
           }
           groups[dateKey].push(order);
       });
+
+      // Filter the Unscheduled group
+      if (groups['Unscheduled']) {
+          groups['Unscheduled'] = groups['Unscheduled'].filter(uOrder => {
+              // If this is an InProgress (Running) order appearing in Unscheduled...
+              if (uOrder.status === WaterOrderStatus.InProgress) {
+                   const sig = `${uOrder.fieldId}-${uOrder.lateralId || uOrder.lateral}-${uOrder.tapNumber || uOrder.headgateId}`;
+                   // ...and we already have a scheduled turn off for it, hide it.
+                   if (scheduledTurnOffSignatures.has(sig)) {
+                       return false;
+                   }
+              }
+              return true;
+          });
+          // Clean up if empty
+          if (groups['Unscheduled'].length === 0) {
+              delete groups['Unscheduled'];
+          }
+      }
 
       return groups;
   }, [relevantOrders]);
