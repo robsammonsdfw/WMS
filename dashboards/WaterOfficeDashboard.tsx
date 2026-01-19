@@ -72,7 +72,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   // --- ANALYTICS LOGIC ---
   const analyticsData = useMemo(() => {
-    const dataMap: Record<string, { name: string; runningAF: number; newOrdersAF: number }> = {};
+    const dataMap: Record<string, { name: string; runningAF: number; newOrdersAF: number; totalVolume: number }> = {};
 
     // Helper to check date range
     const isInTimeframe = (dateStr: string) => {
@@ -92,78 +92,92 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
         }
     };
 
-    // Helper to get group key and name
-    const getGroupInfo = (order: WaterOrder) => {
+    waterOrders.forEach(order => {
+        let key = 'Unassigned';
+        let name = 'Unassigned';
+
         if (grouping === 'lateral') {
-            const latId = order.lateralId || order.lateral || 'Unassigned';
-            // Find official name from registry, or use ID. 
-            // If ID not in registry, group as 'Other/Legacy' to clean up chart? 
-            // For now, we display what we have but try to match registry.
-            const registryLat = laterals.find(l => l.id === latId || l.name === latId);
-            if (registryLat) return { key: registryLat.id, name: registryLat.name };
-            
-            // If it's a legacy lateral not in DB, mark it clearly or group it
-            if (latId === 'Unassigned') return { key: 'Unassigned', name: 'Unassigned' };
-            return { key: 'Other', name: 'Other / Legacy' }; 
+            // Dynamic Key Generation: Use whatever is in the order data
+            // We do NOT check against registry. If the order says "King", we graph "King".
+            const rawLat = order.lateral || order.lateralId || 'Unassigned';
+            key = rawLat.toUpperCase().trim(); // Normalize key
+            name = rawLat;
         } else {
             // Group by Rider
-            // Logic: Find Rider assigned to this lateral
-            // This is tricky if order doesn't store riderId directly. 
-            // We infer from USERS list based on lateral name.
-            const latName = order.lateralId || order.lateral || '';
-            const rider = ditchRiders.find(u => u.assignedLaterals?.some(al => al.toLowerCase() === latName.toLowerCase()));
-            if (rider) return { key: rider.id.toString(), name: rider.name.split(' ')[0] }; // First name only for chart space
-            return { key: 'unassigned', name: 'Unassigned' };
+            // 1. Check if order has explicit rider ID
+            if (order.ditchRiderId) {
+                const rider = ditchRiders.find(u => u.id === order.ditchRiderId);
+                if (rider) {
+                    key = rider.id.toString();
+                    name = rider.name.split(' ')[0];
+                }
+            } 
+            
+            // 2. If no ID match, fallback to Lateral String Matching against Rider Assignments
+            if (key === 'Unassigned') {
+                const latName = (order.lateral || order.lateralId || '').toLowerCase();
+                const rider = ditchRiders.find(u => 
+                    u.assignedLaterals?.some(al => al.toLowerCase() === latName)
+                );
+                if (rider) {
+                    key = rider.id.toString();
+                    name = rider.name.split(' ')[0];
+                }
+            }
         }
-    };
 
-    // Initialize map based on Registry to ensure empty columns show up (optional, but good for completeness)
-    if (grouping === 'lateral') {
-        laterals.forEach(l => {
-            dataMap[l.id] = { name: l.name, runningAF: 0, newOrdersAF: 0 };
-        });
-        dataMap['Other'] = { name: 'Other / Legacy', runningAF: 0, newOrdersAF: 0 };
-    } else {
-        ditchRiders.forEach(r => {
-            dataMap[r.id.toString()] = { name: r.name.split(' ')[0], runningAF: 0, newOrdersAF: 0 };
-        });
-        dataMap['unassigned'] = { name: 'Unassigned', runningAF: 0, newOrdersAF: 0 };
-    }
-
-    waterOrders.forEach(order => {
-        const { key, name } = getGroupInfo(order);
-        
+        // Initialize bucket if missing
         if (!dataMap[key]) {
-            dataMap[key] = { name, runningAF: 0, newOrdersAF: 0 };
+            dataMap[key] = { name: name, runningAF: 0, newOrdersAF: 0, totalVolume: 0 };
         }
 
-        const amount = order.requestedAmount || 0;
+        const amount = Number(order.requestedAmount) || 0;
 
         // 1. Calculate Running Water (Currently In Progress)
-        // "Running" is a state, usually independent of "New Order" timeframe, 
-        // but for this view, we show ALL currently running water.
         if (order.status === WaterOrderStatus.InProgress) {
             dataMap[key].runningAF += amount;
+            dataMap[key].totalVolume += amount;
         }
 
         // 2. Calculate New Orders (Pending/Approved) WITHIN Timeframe
         if ((order.status === WaterOrderStatus.Pending || order.status === WaterOrderStatus.Approved) && order.deliveryStartDate) {
             if (isInTimeframe(order.deliveryStartDate)) {
                 dataMap[key].newOrdersAF += amount;
+                dataMap[key].totalVolume += amount;
             }
         }
     });
 
-    // Remove 'Other' or 'Unassigned' if empty to keep chart clean
-    if (dataMap['Other']?.runningAF === 0 && dataMap['Other']?.newOrdersAF === 0) delete dataMap['Other'];
-    if (dataMap['unassigned']?.runningAF === 0 && dataMap['unassigned']?.newOrdersAF === 0) delete dataMap['unassigned'];
+    // Post-Processing: Convert to Array and Sort
+    let finalArray = Object.values(dataMap);
 
-    return Object.values(dataMap);
-  }, [waterOrders, laterals, ditchRiders, grouping, timeframe]);
+    // Remove empty Unassigned if it has no data
+    finalArray = finalArray.filter(item => item.totalVolume > 0 || item.name !== 'Unassigned');
+
+    // Sort by Total Volume Descending
+    finalArray.sort((a, b) => b.totalVolume - a.totalVolume);
+
+    // Limit to Top 15 to prevent overcrowding, group rest into "Others"
+    if (finalArray.length > 15) {
+        const top15 = finalArray.slice(0, 15);
+        const others = finalArray.slice(15);
+        
+        const othersAgg = others.reduce((acc, curr) => ({
+            name: 'Others',
+            runningAF: acc.runningAF + curr.runningAF,
+            newOrdersAF: acc.newOrdersAF + curr.newOrdersAF,
+            totalVolume: acc.totalVolume + curr.totalVolume
+        }), { name: 'Others', runningAF: 0, newOrdersAF: 0, totalVolume: 0 });
+
+        return [...top15, othersAgg];
+    }
+
+    return finalArray;
+  }, [waterOrders, ditchRiders, grouping, timeframe]);
 
   const totalRunningAF = waterOrders
     .filter(o => o.status === WaterOrderStatus.InProgress)
-    .reduce((sum, o) => sum + (o.requestedAmount || 0), 0);
+    .reduce((sum, o) => sum + (Number(o.requestedAmount) || 0), 0);
   
   const pendingCount = waterOrders.filter(o => o.status === WaterOrderStatus.Pending).length;
 
@@ -380,7 +394,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
             </div>
             <div className="mt-4 text-center">
                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                    Showing {timeframe} data grouped by {grouping === 'lateral' ? 'Lateral Channel' : 'Assigned Ditch Rider'}
+                    Showing {timeframe} data grouped by {grouping === 'lateral' ? 'Lateral Channel' : 'Assigned Ditch Rider'} (Top 15 by Volume)
                 </p>
             </div>
         </div>
