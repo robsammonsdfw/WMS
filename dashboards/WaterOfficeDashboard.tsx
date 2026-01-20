@@ -98,9 +98,8 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
         if (grouping === 'lateral') {
             // Dynamic Key Generation: Use whatever is in the order data
-            // We do NOT check against registry. If the order says "King", we graph "King".
             const rawLat = order.lateral || order.lateralId || 'Unassigned';
-            key = rawLat.toUpperCase().trim(); // Normalize key
+            key = rawLat.toUpperCase().trim(); 
             name = rawLat;
         } else {
             // Group by Rider
@@ -117,12 +116,20 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
             if (key === 'Unassigned') {
                 const latName = (order.lateral || order.lateralId || '').toLowerCase();
                 const rider = ditchRiders.find(u => 
-                    u.assignedLaterals?.some(al => al.toLowerCase() === latName)
+                    u.assignedLaterals?.some(al => al.toLowerCase() === latName || latName.includes(al.toLowerCase()))
                 );
                 if (rider) {
                     key = rider.id.toString();
                     name = rider.name.split(' ')[0];
                 }
+            }
+
+            // 3. Fallback: If there is ONLY ONE ditch rider in the system, assign everything to them.
+            // This covers demo scenarios where assignments might be loose but ownership is implied.
+            if (key === 'Unassigned' && ditchRiders.length === 1) {
+                const singleRider = ditchRiders[0];
+                key = singleRider.id.toString();
+                name = singleRider.name.split(' ')[0];
             }
         }
 
@@ -383,12 +390,12 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
                             iconType="circle"
                             formatter={(value) => <span className="text-xs font-bold text-gray-500 uppercase ml-1 mr-4">{value}</span>}
                         />
-                        <Bar dataKey="runningAF" name="Currently Running" fill="#2563eb" radius={[0, 0, 4, 4]} barSize={40}>
+                        <Bar dataKey="runningAF" name="Currently Running" fill="#2563eb" radius={[0, 0, 4, 4]} maxBarSize={60}>
                              {analyticsData.map((entry, index) => (
                                 <Cell key={`cell-running-${index}`} fill="#3b82f6" />
                             ))}
                         </Bar>
-                        <Bar dataKey="newOrdersAF" name="New Orders (Scheduled)" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+                        <Bar dataKey="newOrdersAF" name="New Orders (Scheduled)" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={60} />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
