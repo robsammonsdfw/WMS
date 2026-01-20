@@ -19,46 +19,30 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   // State for all laterals in the system (fetched from DB)
   const [allSystemLaterals, setAllSystemLaterals] = useState<Lateral[]>([]);
 
-  // Local state for assignments. 
-  const [myLaterals, setMyLaterals] = useState<string[]>(
-    (user.assignedLaterals || []).map(l => l.toLowerCase())
-  );
+  // Local state for assignments with Persistence
+  const [myLaterals, setMyLaterals] = useState<string[]>(() => {
+      const saved = localStorage.getItem(`ditch-rider-assignments-${user.id}`);
+      if (saved) {
+          try {
+              return JSON.parse(saved);
+          } catch (e) { console.error("Failed to parse saved assignments", e); }
+      }
+      // Default fallback
+      return (user.assignedLaterals || []).map(l => l.toLowerCase());
+  });
   
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
-  // 1. Fetch official registry laterals
-  // 2. Scan active orders for any "legacy" or text-based laterals to ensure they are visible
+  // Fetch official registry laterals to populate options
   useEffect(() => {
-    const syncLaterals = async () => {
-        let dbLaterals: Lateral[] = [];
+    const fetchSystemInfo = async () => {
         try {
-            dbLaterals = await getLaterals() || [];
+            const dbLaterals = await getLaterals() || [];
             setAllSystemLaterals(dbLaterals);
         } catch (e) { console.error(e); }
-
-        const activeOrderLaterals = new Set<string>();
-        waterOrders.forEach(o => {
-            if (o.lateralId) activeOrderLaterals.add(o.lateralId.toLowerCase());
-            if (o.lateral) activeOrderLaterals.add(o.lateral.toLowerCase());
-        });
-
-        const dbIds = dbLaterals.map(d => d.id.toLowerCase());
-        const dbNames = dbLaterals.map(d => d.name.toLowerCase());
-
-        setMyLaterals(prev => {
-            // Combine previous (user assigned) + DB Registry + Found in Orders
-            const combined = new Set([
-                ...prev, 
-                ...dbIds, 
-                ...dbNames, 
-                ...Array.from(activeOrderLaterals)
-            ]);
-            return Array.from(combined);
-        });
     };
-
-    syncLaterals();
-  }, [waterOrders]); // Re-run if orders change to catch new incoming orders
+    fetchSystemInfo();
+  }, []);
 
   // Derive all unique laterals from the database (Fields + Orders + DB Laterals) for the config menu
   const availableLaterals = useMemo(() => {
@@ -117,25 +101,18 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   const groupedOrders = useMemo(() => {
       const groups: Record<string, WaterOrder[]> = {};
       
-      // LOGIC FIX: Identify scheduled "Turn Off" orders to prevent "Unscheduled/ASAP" duplicates.
-      // If a field has a scheduled Turn Off (Approved + TurnOff Type), we should NOT show
-      // the "Running" (InProgress) state as a separate "Unscheduled" task, because the task IS scheduled.
       const scheduledTurnOffSignatures = new Set<string>();
 
       relevantOrders.forEach(order => {
           if (order.status === WaterOrderStatus.Approved && order.orderType === WaterOrderType.TurnOff) {
-               // Create a signature matching Field + Lateral + Tap to ensure uniqueness
                const sig = `${order.fieldId}-${order.lateralId || order.lateral}-${order.tapNumber || order.headgateId}`;
                scheduledTurnOffSignatures.add(sig);
           }
 
           let dateKey = '';
-          // If it's a Turn Off order, the relevant date is usually the End Date (or start date if explicit Turn Off record)
-          // Since our data model uses deliveryStartDate as the primary "Action Date", we use that for Approved.
           if (order.status === WaterOrderStatus.Approved) {
               dateKey = order.deliveryStartDate;
           } else {
-              // For InProgress orders, we are looking at when it ends
               dateKey = order.deliveryEndDate || '';
           }
           
@@ -151,20 +128,16 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
           groups[dateKey].push(order);
       });
 
-      // Filter the Unscheduled group
       if (groups['Unscheduled']) {
           groups['Unscheduled'] = groups['Unscheduled'].filter(uOrder => {
-              // If this is an InProgress (Running) order appearing in Unscheduled...
               if (uOrder.status === WaterOrderStatus.InProgress) {
                    const sig = `${uOrder.fieldId}-${uOrder.lateralId || uOrder.lateral}-${uOrder.tapNumber || uOrder.headgateId}`;
-                   // ...and we already have a scheduled turn off for it, hide it.
                    if (scheduledTurnOffSignatures.has(sig)) {
                        return false;
                    }
               }
               return true;
           });
-          // Clean up if empty
           if (groups['Unscheduled'].length === 0) {
               delete groups['Unscheduled'];
           }
@@ -183,9 +156,11 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
 
   const toggleLateral = (lat: string) => {
     const lower = lat.toLowerCase();
-    setMyLaterals(prev => 
-        prev.includes(lower) ? prev.filter(l => l !== lower) : [...prev, lower]
-    );
+    setMyLaterals(prev => {
+        const newState = prev.includes(lower) ? prev.filter(l => l !== lower) : [...prev, lower];
+        localStorage.setItem(`ditch-rider-assignments-${user.id}`, JSON.stringify(newState));
+        return newState;
+    });
   };
 
   const initiateScan = (order: WaterOrder) => {
@@ -206,14 +181,11 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
       try {
           if (order.status === WaterOrderStatus.Approved) {
               if (isTurnOff) {
-                  // Pending Turn Off -> Completed
                    await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.Completed });
               } else {
-                  // Pending Turn On -> In Progress
                    await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.InProgress });
               }
           } else if (order.status === WaterOrderStatus.InProgress) {
-              // Running -> Completed
               await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.Completed });
           }
           await refreshWaterOrders();
@@ -237,7 +209,6 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
       const isTurnOffType = scanTargetOrder.orderType === WaterOrderType.TurnOff;
 
       if (scanTargetOrder.status === WaterOrderStatus.Approved) {
-          // If the order is "Turn Off", we expect an end-delivery scan
           if (isTurnOffType) {
               if (action !== 'end-delivery') {
                   alert("Error: Scanned a 'Start' QR code but this is a Turn Off order.");
@@ -246,7 +217,6 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
               await updateWaterOrder(scanTargetOrder.id, { ...scanTargetOrder, status: WaterOrderStatus.Completed });
               alert(`SUCCESS: Water Delivery STOPPED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
           } else {
-              // Standard Turn On Order
               if (action !== 'start-delivery') {
                   alert("Error: Scanned a 'Stop' QR code but trying to Start delivery.");
                   return;
@@ -255,7 +225,6 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
               alert(`SUCCESS: Water Delivery STARTED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
           }
       } else {
-          // If In Progress, we are stopping it
           if (action !== 'end-delivery') {
               alert("Error: Scanned a 'Start' QR code but trying to Stop delivery.");
               return;
@@ -274,19 +243,10 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
     }
   };
 
-  // Helper to get local date string YYYY-MM-DD
-  const getLocalTodayStr = () => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   const formatDateDisplay = (dateStr: string) => {
       if (dateStr === 'Unscheduled') return 'Unscheduled / Asap';
       
-      const todayStr = getLocalTodayStr();
+      const todayStr = new Date().toISOString().split('T')[0];
       if (dateStr === todayStr) return 'Today';
       
       const [y, m, d] = dateStr.split('-').map(Number);
@@ -358,19 +318,10 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
 
                         <div className="space-y-4">
                             {groupedOrders[date].map(order => {
-                                // --- VISUAL LOGIC ---
-                                
-                                // 1. Sidebar Color (Type of Order)
-                                // Turn On = Blue. Turn Off = Red.
                                 const isTurnOffType = order.orderType === WaterOrderType.TurnOff;
                                 const barColor = isTurnOffType ? 'bg-red-600' : 'bg-blue-600';
                                 const shadowColor = isTurnOffType ? 'shadow-red-100' : 'shadow-blue-100';
 
-                                // 2. Widget Status (Current Water State)
-                                // If InProgress -> Water is Running (Blue).
-                                // If Approved (Pending) -> 
-                                //    If Type is Turn On -> Water is currently OFF (Red).
-                                //    If Type is Turn Off -> Water is currently ON (Blue).
                                 let isWaterRunning = false;
                                 if (order.status === WaterOrderStatus.InProgress) {
                                     isWaterRunning = true;
@@ -381,7 +332,6 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                                 const widgetBg = isWaterRunning ? 'bg-blue-600' : 'bg-red-600';
                                 const widgetText = isWaterRunning ? 'WATER RUNNING' : 'WATER OFF';
 
-                                // 3. Action Text
                                 let actionText = '';
                                 if (order.status === WaterOrderStatus.Approved) {
                                     actionText = isTurnOffType ? 'Stop' : 'Start';
