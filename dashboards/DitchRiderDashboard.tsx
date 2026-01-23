@@ -310,113 +310,113 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                     ))
                 ) : (
                     <div className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-[10px] font-black uppercase tracking-widest">
-                        No Run Selected
+                        No Assignments
                     </div>
                 )}
                 {myLaterals.length > 5 && (
-                    <span className="text-[10px] text-gray-500 font-bold">+{myLaterals.length - 5} more</span>
+                    <div className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-[10px] font-black uppercase tracking-widest">
+                        +{myLaterals.length - 5} More
+                    </div>
                 )}
             </div>
+
+            {/* CONFIG MENU (Collapsible) */}
+            {isConfigOpen && (
+                <div className="mt-4 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Manage My Route (Select Active Channels)</p>
+                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                        {availableLaterals.map(latDisplay => {
+                            const lower = latDisplay.toLowerCase();
+                            const isActive = myLaterals.includes(lower);
+                            return (
+                                <button
+                                    key={latDisplay}
+                                    onClick={() => toggleLateral(latDisplay)}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all border ${
+                                        isActive 
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                                    }`}
+                                >
+                                    {latDisplay}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <button onClick={() => setIsConfigOpen(false)} className="mt-3 w-full py-2 bg-gray-50 text-gray-400 text-xs font-bold rounded-lg hover:bg-gray-100">Close Config</button>
+                </div>
+            )}
         </div>
 
-        {/* Combined Task List */}
+        {/* Date Groups */}
         <div className="space-y-8">
-            {sortedDates.length === 0 ? (
-                <div className="text-center py-16 bg-white/50 rounded-3xl border-2 border-dashed border-gray-200">
-                    <WaterDropIcon className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-                    <p className="text-gray-500 font-bold uppercase text-xs tracking-widest">
-                        {myLaterals.length === 0 ? 'Configure your run to see orders.' : 'No active tasks for selected laterals.'}
-                    </p>
-                    {myLaterals.length === 0 && (
-                        <button onClick={() => setIsConfigOpen(true)} className="mt-4 text-blue-600 font-bold text-sm hover:underline">
-                            Select Laterals
-                        </button>
-                    )}
-                </div>
-            ) : (
-                sortedDates.map((date) => (
-                    <div key={date} className="animate-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex items-center gap-4 mb-4 ml-2 sticky top-36 bg-gray-50/90 backdrop-blur-sm p-2 rounded-xl z-0">
-                            <ClockIcon className="h-5 w-5 text-gray-400" />
-                            <h3 className="text-lg font-black text-gray-700 uppercase tracking-wide">
-                                {formatDateDisplay(date)}
-                                {date !== 'Unscheduled' && <span className="ml-3 text-xs text-gray-400 font-bold tracking-normal">{date}</span>}
-                            </h3>
+            {sortedDates.map(dateKey => {
+                const orders = groupedOrders[dateKey];
+                if (!orders || orders.length === 0) return null;
+
+                return (
+                    <div key={dateKey} className="animate-in slide-in-from-bottom-4 duration-500">
+                        <div className="flex items-center mb-4 sticky top-28 bg-gray-50/95 backdrop-blur py-2 z-0">
+                            <div className="h-3 w-3 rounded-full bg-indigo-500 mr-3 shadow-lg shadow-indigo-200"></div>
+                            <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest">{formatDateDisplay(dateKey)}</h3>
+                            <div className="flex-1 h-px bg-gray-200 ml-4"></div>
                         </div>
 
                         <div className="space-y-4">
-                            {groupedOrders[date].map(order => {
-                                const isTurnOffType = order.orderType === WaterOrderType.TurnOff;
-                                const barColor = isTurnOffType ? 'bg-red-600' : 'bg-blue-600';
-                                const shadowColor = isTurnOffType ? 'shadow-red-100' : 'shadow-blue-100';
+                            {orders.map(order => {
+                                const isTurnOff = order.orderType === WaterOrderType.TurnOff;
+                                const isRunning = order.status === WaterOrderStatus.InProgress;
 
-                                let isWaterRunning = false;
-                                if (order.status === WaterOrderStatus.InProgress) {
-                                    isWaterRunning = true;
-                                } else if (order.status === WaterOrderStatus.Approved) {
-                                    isWaterRunning = isTurnOffType; 
-                                }
-
-                                const widgetBg = isWaterRunning ? 'bg-blue-600' : 'bg-red-600';
-                                const widgetText = isWaterRunning ? 'WATER RUNNING' : 'WATER OFF';
-
-                                let actionText = '';
-                                if (order.status === WaterOrderStatus.Approved) {
-                                    actionText = isTurnOffType ? 'Stop' : 'Start';
-                                } else {
-                                    actionText = 'Stop';
+                                let cardColorClass = 'bg-white border-l-4 border-blue-500';
+                                let actionLabel = isTurnOff ? 'Stop' : 'Start';
+                                if (isRunning) {
+                                    actionLabel = isTurnOff ? 'Stop' : 'Running'; 
+                                    if(isTurnOff) cardColorClass = 'bg-white border-l-4 border-red-500';
+                                    else cardColorClass = 'bg-white border-l-4 border-green-500';
+                                } else if (isTurnOff) {
+                                     cardColorClass = 'bg-white border-l-4 border-red-500';
                                 }
 
                                 return (
-                                    <div key={order.id} className="bg-white rounded-3xl shadow-md overflow-hidden border border-gray-100 relative group">
-                                        <div className={`absolute left-0 top-0 bottom-0 w-3 ${barColor} transition-colors duration-500`}></div>
-                                        <div className="p-6 pl-9 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-                                            
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <span className={`px-2 py-0.5 text-white text-[9px] font-black uppercase rounded tracking-widest ${widgetBg} transition-colors duration-500`}>
-                                                        {widgetText}
-                                                    </span>
-                                                    <span className="px-2 py-0.5 bg-gray-900 text-white text-[9px] font-black uppercase rounded tracking-widest">
-                                                        {(order.lateral || order.lateralId) ? `LATERAL ${order.lateral || order.lateralId}` : 'UNASSIGNED LATERAL'}
-                                                    </span>
+                                    <div key={order.id} className={`p-6 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 relative overflow-hidden group ${cardColorClass}`}>
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                     <span className="text-[10px] font-black uppercase tracking-widest bg-gray-100 px-2 py-0.5 rounded text-gray-500">
+                                                        {order.lateralId || order.lateral}
+                                                     </span>
+                                                     <span className="text-[10px] font-black uppercase tracking-widest bg-gray-100 px-2 py-0.5 rounded text-gray-500">
+                                                        Tap {order.tapNumber || order.headgateId}
+                                                     </span>
                                                 </div>
-                                                
-                                                <div className="flex items-baseline gap-2">
-                                                    <h4 className="text-3xl font-black text-gray-900 leading-none">
-                                                        {(order.requestedInches || (order.requestedAmount * 25)).toFixed(0)}
-                                                        <span className="text-lg text-gray-400 ml-1">IN</span>
-                                                    </h4>
-                                                    <span className="text-sm font-bold text-gray-400 uppercase">
-                                                        / {order.requestedAmount} ACFT
-                                                    </span>
-                                                </div>
-
-                                                <div className="mt-2 flex items-center gap-3">
-                                                     <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-black uppercase rounded tracking-widest border border-gray-200">
-                                                        {order.tapNumber ? `TAP ${order.tapNumber}` : `HEADGATE ${order.headgateId || 'Main'}`}
-                                                    </span>
-                                                </div>
-                                                
-                                                <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mt-2 pl-1">
-                                                    {order.fieldName} <span className="mx-1 text-gray-300">|</span> {order.requester}
-                                                </p>
+                                                <h4 className="text-xl font-black text-gray-900 leading-tight">{order.fieldName}</h4>
+                                                <p className="text-xs font-bold text-gray-400 uppercase mt-1">{order.orderType}</p>
                                             </div>
-
-                                            <div className="flex flex-col gap-2 w-full sm:w-auto">
-                                                <button 
-                                                    onClick={() => initiateScan(order)}
-                                                    className={`w-full sm:w-auto px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] text-white shadow-lg flex items-center justify-center gap-3 transition-all active:scale-95 ${barColor} hover:brightness-110 ${shadowColor}`}
-                                                >
-                                                    <QrCodeIcon className="h-5 w-5" />
-                                                    <span>Scan {actionText}</span>
-                                                </button>
-                                                
+                                            <div className="text-right">
+                                                <span className="block text-2xl font-black text-gray-800">{order.requestedAmount} <span className="text-xs text-gray-400">AF</span></span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="mt-6 flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-xs font-bold text-gray-400">
+                                                <ClockIcon className="h-4 w-4" />
+                                                {order.deliveryStartDate}
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-2">
                                                 <button 
                                                     onClick={() => handleManualAction(order)}
-                                                    className="w-full text-center text-[10px] font-bold text-gray-400 hover:text-gray-600 hover:bg-gray-50 py-2 rounded-xl transition-colors uppercase tracking-widest"
+                                                    className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-gray-600 font-bold text-[10px] uppercase tracking-wider"
                                                 >
-                                                    Manual {actionText}
+                                                    Manual
+                                                </button>
+
+                                                <button 
+                                                    onClick={() => initiateScan(order)}
+                                                    className="flex items-center gap-2 px-5 py-3 bg-gray-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-black hover:scale-105 transition-all shadow-lg shadow-gray-200"
+                                                >
+                                                    <QrCodeIcon className="h-4 w-4" />
+                                                    Scan to {actionLabel}
                                                 </button>
                                             </div>
                                         </div>
@@ -425,48 +425,19 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                             })}
                         </div>
                     </div>
-                ))
+                );
+            })}
+
+            {sortedDates.length === 0 && (
+                <div className="text-center py-20 opacity-50">
+                    <WaterDropIcon className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                    <p className="text-lg font-black text-gray-400 uppercase">No active tasks for selected channels</p>
+                    <p className="text-xs text-gray-400 mt-2">Check your lateral assignments in the configuration menu.</p>
+                </div>
             )}
         </div>
 
-      {isScanning && <Scanner onScan={handleScan} onClose={() => setIsScanning(false)} />}
-      
-      {/* Configuration Modal */}
-      {isConfigOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsConfigOpen(false)}>
-              <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-                  <div className="bg-gray-900 p-6 flex justify-between items-center text-white">
-                      <div>
-                          <h3 className="font-black text-lg uppercase tracking-wide">Configure Run</h3>
-                          <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Select Assignments</p>
-                      </div>
-                      <button onClick={() => setIsConfigOpen(false)}><XCircleIcon className="h-6 w-6 text-gray-400 hover:text-white" /></button>
-                  </div>
-                  <div className="p-6 max-h-[60vh] overflow-y-auto">
-                      <div className="space-y-2">
-                          {availableLaterals.length > 0 ? availableLaterals.map(lat => (
-                              <label key={lat} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 hover:bg-gray-100 cursor-pointer border border-transparent hover:border-gray-200 transition-all">
-                                  <span className="font-black text-gray-700 uppercase">Lateral {lat}</span>
-                                  <input 
-                                      type="checkbox" 
-                                      checked={myLaterals.includes(lat.trim().toLowerCase())}
-                                      onChange={() => toggleLateral(lat)}
-                                      className="w-6 h-6 rounded-md border-gray-300 text-blue-600 focus:ring-blue-500"
-                                  />
-                              </label>
-                          )) : (
-                              <p className="text-center text-gray-500 italic p-4">No laterals found in current registry.</p>
-                          )}
-                      </div>
-                  </div>
-                  <div className="p-4 bg-gray-50 border-t border-gray-100">
-                      <button onClick={() => setIsConfigOpen(false)} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase rounded-xl tracking-widest shadow-lg shadow-blue-200 transition-all">
-                          Confirm Assignments
-                      </button>
-                  </div>
-              </div>
-          </div>
-      )}
+        {isScanning && <Scanner onScan={handleScan} onClose={() => setIsScanning(false)} />}
     </div>
   );
 };

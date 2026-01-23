@@ -38,6 +38,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [createOrderInitialFieldId, setCreateOrderInitialFieldId] = useState<string | undefined>(undefined);
   const [createOrderType, setCreateOrderType] = useState<WaterOrderType>(WaterOrderType.TurnOn);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [now, setNow] = useState(new Date());
   
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
 
@@ -58,6 +59,12 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   // New "Direct Typed" Infrastructure States
   const [newTypedLateral, setNewTypedLateral] = useState('');
   const [newTypedHeadgate, setNewTypedHeadgate] = useState('');
+
+  // Timer for real-time updates
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (viewMode === 'admin') fetchAdminData();
@@ -86,7 +93,35 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     return () => clearTimeout(timer);
   }, [fields]);
 
-  const totalWaterUsed = fields.reduce((sum, field) => sum + (Number(field.waterUsed) || 0), 0);
+  // Helper to Calculate Real-Time Usage per Field
+  const calculateFieldStats = (field: Field) => {
+    const fieldOrders = waterOrders.filter(o => o.fieldId === field.id);
+    const calculatedTotalUsage = fieldOrders.reduce((sum, order) => {
+        const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
+        let duration = 0;
+        
+        const startParts = order.deliveryStartDate.split('-');
+        const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+
+        if (order.status === WaterOrderStatus.InProgress) {
+            duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
+            const endParts = order.deliveryEndDate.split('-');
+            const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
+            duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        }
+        return sum + (duration * rate);
+    }, 0);
+
+    const used = Math.max(Number(field.waterUsed || 0), calculatedTotalUsage);
+    const total = Number(field.totalWaterAllocation) || 0;
+    const remaining = Math.max(0, total - used);
+    
+    return { used, total, remaining };
+  };
+
+  // Aggregated Stats
+  const totalWaterUsed = fields.reduce((sum, field) => sum + calculateFieldStats(field).used, 0);
   const totalAllocation = fields.reduce((sum, field) => sum + (Number(field.totalWaterAllocation) || 0), 0);
   const allocationUsedPercent = totalAllocation > 0 ? ((totalWaterUsed / totalAllocation) * 100).toFixed(1) : "0";
 
@@ -147,8 +182,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         await createField({ 
             id: newFieldId, 
             name: newFieldName, 
-            companyName: newCompName,
-            address: newAddr,
+            companyName: newCompName, 
+            address: newAddr, 
             phone: newPhone,
             crop: newFieldCrop, 
             acres: parseFloat(newFieldAcres) || 0,
@@ -375,11 +410,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100">
-                            {fields.map(field => (
+                            {fields.map(field => {
+                                const stats = calculateFieldStats(field);
+                                return (
                                 <tr key={field.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedFieldDetails(field)}>
                                     <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{field.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.crop}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap font-black text-blue-600">{Number(field.waterUsed).toFixed(1)} / {Number(field.totalWaterAllocation).toFixed(1)} AF</td>
+                                    <td className="px-6 py-4 whitespace-nowrap font-black text-blue-600">{stats.remaining.toFixed(1)} / {stats.total.toFixed(1)} AF</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <div className="flex items-center gap-4">
                                             <button onClick={(e) => { e.stopPropagation(); setSelectedFieldForQR(field); }} className="text-blue-600 hover:text-blue-800 font-bold uppercase text-[10px] flex items-center gap-1">
@@ -391,7 +428,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                            )})}
                         </tbody>
                     </table>
                 </div>
