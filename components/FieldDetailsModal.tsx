@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Field, WaterOrder, WaterOrderStatus, WaterOrderType } from '../types';
 import { XCircleIcon, DocumentAddIcon } from './icons';
 
@@ -11,33 +11,61 @@ interface FieldDetailsModalProps {
 }
 
 const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, onClose, onCreateOrder }) => {
+  // State for real-time updates
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000); // Update every second
+    return () => clearInterval(timer);
+  }, []);
+
   const activeOrder = orders.find(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
   const isRunning = !!activeOrder;
 
-  // Real-time Calculations
-  const allocation = Number(field.totalWaterAllocation) || 0;
-  const allocationUsed = Number(field.waterUsed) || 0;
-  const allocationRemaining = Math.max(0, allocation - allocationUsed);
+  // --- Real-Time Calculations ---
 
-  const allotment = Number(field.waterAllotment) || 0;
-  const allotmentUsed = Number(field.allotmentUsed) || 0;
-  const allotmentRemaining = Math.max(0, allotment - allotmentUsed);
-
+  // 1. Calculate Rate
   const runningInches = activeOrder?.requestedInches || field.currentRunningInches || 0;
-  const afpd = runningInches / 25;
-  const daysRemaining = (isRunning && afpd > 0) ? (allotmentRemaining / afpd).toFixed(0) : "0";
+  // Conversion rule: 25 Miner's Inches = 1 Acre-Foot per Day (AFPD)
+  const afpd = runningInches / 25; 
 
-  // Days Running / Days Off Logic
-  const lastStateChangeOrder = orders
-    .filter(o => o.fieldId === field.id && (o.status === WaterOrderStatus.InProgress || o.status === WaterOrderStatus.Completed))
-    .sort((a, b) => new Date(b.deliveryStartDate).getTime() - new Date(a.deliveryStartDate).getTime())[0];
-  
-  const calculateDaysSince = (dateStr?: string) => {
-    if (!dateStr) return 0;
-    const diff = new Date().getTime() - new Date(dateStr).getTime();
-    return Math.floor(diff / (1000 * 60 * 60 * 24));
-  };
-  const durationDays = calculateDaysSince(lastStateChangeOrder?.deliveryStartDate);
+  // 2. Calculate Elapsed Time (Duration of current run)
+  let daysElapsed = 0;
+  if (isRunning && activeOrder?.deliveryStartDate) {
+      // Parse Start Date. Note: Date strings (YYYY-MM-DD) parse as UTC midnight usually. 
+      // We treat the start date as 00:00:00 of that day in local time for the calculation.
+      const startDateParts = activeOrder.deliveryStartDate.split('-');
+      const start = new Date(
+          parseInt(startDateParts[0]), 
+          parseInt(startDateParts[1]) - 1, 
+          parseInt(startDateParts[2])
+      );
+      
+      const diffMs = now.getTime() - start.getTime();
+      // Ensure we don't show negative days if the start date is technically in the "future" due to timezone edge cases
+      daysElapsed = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  // 3. Calculate Water Used in THIS specific run (Real-time)
+  const currentRunAF = isRunning ? (daysElapsed * afpd) : 0;
+
+  // 4. Calculate Historical Totals (Pre-DB + Previous Orders)
+  // Note: field.waterUsed comes from DB. We assume DB updates on 'Complete'.
+  // So we take DB value + Current Real-time Run value.
+  const allocationTotal = Number(field.totalWaterAllocation) || 0;
+  const historicalAllocationUsed = Number(field.waterUsed) || 0;
+  const realTimeAllocationUsed = historicalAllocationUsed + currentRunAF;
+  const allocationRemaining = Math.max(0, allocationTotal - realTimeAllocationUsed);
+
+  const allotmentTotal = Number(field.waterAllotment) || 0;
+  const historicalAllotmentUsed = Number(field.allotmentUsed) || 0;
+  const realTimeAllotmentUsed = historicalAllotmentUsed + currentRunAF;
+  const allotmentRemaining = Math.max(0, allotmentTotal - realTimeAllotmentUsed);
+
+  // 5. Estimate Feed Remaining based on Real-Time Balance
+  const daysFeedRemaining = (isRunning && afpd > 0) 
+    ? (allotmentRemaining / afpd).toFixed(1) 
+    : "0";
 
   const googleMapsUrl = (field.lat && field.lng) 
     ? `https://www.google.com/maps/dir/?api=1&destination=${field.lat},${field.lng}` 
@@ -124,7 +152,10 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                 <div className="mt-10 pt-8 border-t border-white/20 space-y-4">
                     <div className="text-white/80 font-black text-xl uppercase tracking-tight">
                         {isRunning ? (
-                            <>CURRENTLY RUNNING: {runningInches}" / {afpd.toFixed(1)} AFPD</>
+                            <div className="flex flex-col gap-1">
+                                <span>CURRENTLY RUNNING: {runningInches}" / {afpd.toFixed(1)} AFPD</span>
+                                <span className="text-xs opacity-75">SESSION TOTAL: {currentRunAF.toFixed(2)} AF</span>
+                            </div>
                         ) : (
                             <>CURRENTLY OFFLINE</>
                         )}
@@ -132,11 +163,11 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                     
                     <div className="flex flex-col items-center gap-2">
                         <div className="text-3xl font-black tracking-tighter uppercase">
-                            {durationDays} DAYS {isRunning ? 'RUNNING' : 'OFF'}
+                            {isRunning ? `${daysElapsed.toFixed(1)} DAYS RUNNING` : `0 DAYS RUNNING`}
                         </div>
                         {isRunning && (
                             <div className="bg-black/20 px-4 py-1 rounded-lg text-sm font-black text-white/90">
-                                {daysRemaining} DAYS ESTIMATED FEED REMAINING
+                                {daysFeedRemaining} DAYS ESTIMATED FEED REMAINING
                             </div>
                         )}
                     </div>
