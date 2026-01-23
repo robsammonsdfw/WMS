@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Field, WaterOrder, WaterOrderStatus } from '../types';
 
 interface RemainingFeedViewProps {
@@ -9,6 +9,13 @@ interface RemainingFeedViewProps {
 }
 
 const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrders, onFieldClick }) => {
+  // State for real-time updates (syncs with Modal logic)
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000); // Update every second
+    return () => clearInterval(timer);
+  }, []);
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return 'Asap';
@@ -18,14 +25,6 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
         if (year && month && day) return `${month}/${day}/${year.slice(-2)}`;
         return cleanDate;
     } catch (e) { return dateStr; }
-  };
-
-  const calculateDaysSince = (dateStr?: string) => {
-    if (!dateStr) return 0;
-    const past = new Date(dateStr).getTime();
-    const now = new Date().getTime();
-    const diff = now - past;
-    return Math.floor(diff / (1000 * 60 * 60 * 24));
   };
 
   return (
@@ -43,22 +42,61 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
             (o.status === WaterOrderStatus.Pending || o.status === WaterOrderStatus.Approved)
         );
 
-        // 3. Days Running / Days Off Calculation
-        // We find the last order that caused a state change to determine the duration
-        const lastOrder = waterOrders
-            .filter(o => o.fieldId === field.id && (o.status === WaterOrderStatus.InProgress || o.status === WaterOrderStatus.Completed))
-            .sort((a, b) => new Date(b.deliveryStartDate).getTime() - new Date(a.deliveryStartDate).getTime())[0];
-        
-        const durationDays = calculateDaysSince(lastOrder?.deliveryStartDate);
-
-        // 4. Rate and Allotment
+        // 3. Real-time Calculations
+        // Rate
         const runningInches = activeOrder?.requestedInches 
             || (activeOrder?.requestedAmount ? activeOrder.requestedAmount * 25 : 0)
             || field.currentRunningInches 
             || 0;
-            
         const afpd = runningInches / 25; // 25" = 1 AF per day
-        const allotmentRemaining = (field.waterAllotment || 0) - (field.allotmentUsed || 0);
+
+        // Duration & Consumption
+        let daysRunningDisplay = "0.0";
+        let daysOffDisplay = "0";
+        let currentRunAF = 0;
+
+        if (isRunning && activeOrder?.deliveryStartDate) {
+             // Calculate precise days running
+             const startDateParts = activeOrder.deliveryStartDate.split('-');
+             const start = new Date(
+                parseInt(startDateParts[0]), 
+                parseInt(startDateParts[1]) - 1, 
+                parseInt(startDateParts[2])
+             );
+             // Use the 'now' state
+             const diffMs = now.getTime() - start.getTime();
+             const daysFloat = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
+             
+             daysRunningDisplay = daysFloat.toFixed(1);
+             currentRunAF = daysFloat * afpd;
+        } else {
+             // Calculate integer days off based on last Completed order
+             const lastOrder = waterOrders
+                .filter(o => o.fieldId === field.id && o.status === WaterOrderStatus.Completed)
+                .sort((a, b) => {
+                    // Sort by End Date if available, else Start Date
+                    const dateA = a.deliveryEndDate || a.deliveryStartDate;
+                    const dateB = b.deliveryEndDate || b.deliveryStartDate;
+                    return new Date(dateB).getTime() - new Date(dateA).getTime();
+                })[0];
+             
+             if (lastOrder) {
+                 const dateStr = lastOrder.deliveryEndDate || lastOrder.deliveryStartDate;
+                 if (dateStr) {
+                    const parts = dateStr.split('-');
+                    const end = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                    const diffMs = now.getTime() - end.getTime();
+                    const daysInt = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                    daysOffDisplay = Math.max(0, daysInt).toString();
+                 }
+             }
+        }
+
+        // 4. Allotment Remaining Calculation
+        // Formula: (Total Allotment) - (Historical Used from DB + Real-time Used in Current Session)
+        const allotmentTotal = Number(field.waterAllotment) || 0;
+        const historicalUsed = Number(field.allotmentUsed) || 0;
+        const allotmentRemaining = Math.max(0, allotmentTotal - (historicalUsed + currentRunAF));
 
         // Style based on state
         const cardBg = isRunning ? 'bg-blue-600' : 'bg-red-600';
@@ -101,7 +139,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
 
             {/* Days Running / Days Off */}
             <div className="text-white font-black text-2xl uppercase tracking-tighter pt-4 border-t border-white/20 w-full">
-                {durationDays} DAYS {isRunning ? 'RUNNING' : 'OFF'}
+                {isRunning ? `${daysRunningDisplay} DAYS RUNNING` : `${daysOffDisplay} DAYS OFF`}
             </div>
           </div>
         );
