@@ -187,7 +187,11 @@ exports.handler = async (e) => {
 
         if (path.match(/^\/orders\/[^/]+$/) && method === 'PUT') {
             const oid = path.split('/').pop();
-            await client.query(`UPDATE water_orders SET status = $1 WHERE id = $2`, [body.status, oid]);
+            // Update status AND dates if provided to ensure proper history calculation
+            await client.query(
+                `UPDATE water_orders SET status = COALESCE($1, status), delivery_end_date = COALESCE($2, delivery_end_date), delivery_start_date = COALESCE($3, delivery_start_date) WHERE id = $4`, 
+                [body.status, body.deliveryEndDate, body.deliveryStartDate, oid]
+            );
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 

@@ -37,8 +37,6 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
   // 2. Calculate Elapsed Time (Duration of current run)
   let daysElapsed = 0;
   if (isRunning && activeOrder?.deliveryStartDate) {
-      // Parse Start Date. Note: Date strings (YYYY-MM-DD) parse as UTC midnight usually. 
-      // We treat the start date as 00:00:00 of that day in local time for the calculation.
       const startDateParts = activeOrder.deliveryStartDate.split('-');
       const start = new Date(
           parseInt(startDateParts[0]), 
@@ -47,25 +45,40 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
       );
       
       const diffMs = now.getTime() - start.getTime();
-      // Ensure we don't show negative days if the start date is technically in the "future" due to timezone edge cases
       daysElapsed = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
   }
 
   // 3. Calculate Water Used in THIS specific run (Real-time)
   const currentRunAF = isRunning ? (daysElapsed * afpd) : 0;
 
-  // 4. Calculate Historical Totals (Pre-DB + Previous Orders)
-  // Note: field.waterUsed comes from DB. We assume DB updates on 'Complete'.
-  // So we take DB value + Current Real-time Run value.
+  // 4. Calculate Historical Totals (Cumulative from Order History)
+  const allFieldOrders = orders.filter(o => o.fieldId === field.id);
+  
+  const calculatedTotalUsage = allFieldOrders.reduce((sum, order) => {
+       const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
+       let duration = 0;
+       const startParts = order.deliveryStartDate.split('-');
+       const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+
+       if (order.status === WaterOrderStatus.InProgress) {
+           duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+       } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
+           const endParts = order.deliveryEndDate.split('-');
+           const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
+           duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+       } 
+       return sum + (duration * rate);
+  }, 0);
+
+  // Use the greater of DB value or Calculated value
+  const finalUsage = Math.max(Number(field.allotmentUsed || 0), calculatedTotalUsage);
+
   const allocationTotal = Number(field.totalWaterAllocation) || 0;
-  const historicalAllocationUsed = Number(field.waterUsed) || 0;
-  const realTimeAllocationUsed = historicalAllocationUsed + currentRunAF;
-  const allocationRemaining = Math.max(0, allocationTotal - realTimeAllocationUsed);
+  // Allocation assumes same usage for now, or field.waterUsed if tracked separately
+  const allocationRemaining = Math.max(0, allocationTotal - Math.max(Number(field.waterUsed || 0), calculatedTotalUsage));
 
   const allotmentTotal = Number(field.waterAllotment) || 0;
-  const historicalAllotmentUsed = Number(field.allotmentUsed) || 0;
-  const realTimeAllotmentUsed = historicalAllotmentUsed + currentRunAF;
-  const allotmentRemaining = Math.max(0, allotmentTotal - realTimeAllotmentUsed);
+  const allotmentRemaining = Math.max(0, allotmentTotal - finalUsage);
 
   // 5. Estimate Feed Remaining based on Real-Time Balance
   const daysFeedRemaining = (isRunning && afpd > 0) 

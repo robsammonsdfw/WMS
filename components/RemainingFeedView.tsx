@@ -43,38 +43,34 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
         );
 
         // 3. Real-time Calculations
-        // Rate
+        
+        // --- RATE CALCULATION ---
         const runningInches = activeOrder?.requestedInches 
             || (activeOrder?.requestedAmount ? activeOrder.requestedAmount * 25 : 0)
             || field.currentRunningInches 
             || 0;
-        const afpd = runningInches / 25; // 25" = 1 AF per day
+        const currentRateAFPD = runningInches / 25; // 25" = 1 AF per day
 
-        // Duration & Consumption
+        // --- DURATION CALCULATION ---
         let daysRunningDisplay = "0.0";
         let daysOffDisplay = "0";
-        let currentRunAF = 0;
 
         if (isRunning && activeOrder?.deliveryStartDate) {
-             // Calculate precise days running
              const startDateParts = activeOrder.deliveryStartDate.split('-');
              const start = new Date(
                 parseInt(startDateParts[0]), 
                 parseInt(startDateParts[1]) - 1, 
                 parseInt(startDateParts[2])
              );
-             // Use the 'now' state
              const diffMs = now.getTime() - start.getTime();
              const daysFloat = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
-             
              daysRunningDisplay = daysFloat.toFixed(1);
-             currentRunAF = daysFloat * afpd;
         } else {
-             // Calculate integer days off based on last Completed order
+             // Calculate days off based on last Completed order
              const lastOrder = waterOrders
                 .filter(o => o.fieldId === field.id && o.status === WaterOrderStatus.Completed)
                 .sort((a, b) => {
-                    // Sort by End Date if available, else Start Date
+                    // Sort by End Date if available
                     const dateA = a.deliveryEndDate || a.deliveryStartDate;
                     const dateB = b.deliveryEndDate || b.deliveryStartDate;
                     return new Date(dateB).getTime() - new Date(dateA).getTime();
@@ -92,11 +88,37 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
              }
         }
 
+        // --- CUMULATIVE USAGE CALCULATION ---
+        // Sum up all usage from order history (Completed + InProgress) 
+        // to ensure we display the most accurate balance even if DB hasn't updated.
+        const allFieldOrders = waterOrders.filter(o => o.fieldId === field.id);
+        
+        const calculatedTotalUsage = allFieldOrders.reduce((sum, order) => {
+             const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
+             let duration = 0;
+             const startParts = order.deliveryStartDate.split('-');
+             const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+
+             if (order.status === WaterOrderStatus.InProgress) {
+                 // Active Run
+                 duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+             } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
+                 // Completed Run with End Date
+                 const endParts = order.deliveryEndDate.split('-');
+                 const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
+                 duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+             } 
+             // Note: If Completed but no EndDate, we can't calculate usage reliably, skip or assume 0.
+             
+             return sum + (duration * rate);
+        }, 0);
+
         // 4. Allotment Remaining Calculation
-        // Formula: (Total Allotment) - (Historical Used from DB + Real-time Used in Current Session)
         const allotmentTotal = Number(field.waterAllotment) || 0;
-        const historicalUsed = Number(field.allotmentUsed) || 0;
-        const allotmentRemaining = Math.max(0, allotmentTotal - (historicalUsed + currentRunAF));
+        // We use the greater of DB value or Calculated value to be safe, 
+        // but typically Calculated value will be more up-to-date for recent actions.
+        const finalUsage = Math.max(Number(field.allotmentUsed || 0), calculatedTotalUsage);
+        const allotmentRemaining = Math.max(0, allotmentTotal - finalUsage);
 
         // Style based on state
         const cardBg = isRunning ? 'bg-blue-600' : 'bg-red-600';
@@ -115,7 +137,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
             {/* Currently Running Rate */}
             <div className="text-white font-black text-xl uppercase tracking-tight">
                 {isRunning ? (
-                    <>CURRENTLY {runningInches.toFixed(0)}" / {afpd.toFixed(1)} ACFT</>
+                    <>CURRENTLY {runningInches.toFixed(0)}" / {currentRateAFPD.toFixed(1)} ACFT</>
                 ) : (
                     <>CURRENTLY OFFLINE</>
                 )}

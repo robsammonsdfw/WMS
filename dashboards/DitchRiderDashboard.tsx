@@ -178,15 +178,28 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
 
       if (!window.confirm(`Manual Override: Confirm "${actionName}" for ${order.fieldName}?`)) return;
 
+      const todayStr = new Date().toISOString().split('T')[0];
+
       try {
           if (order.status === WaterOrderStatus.Approved) {
               if (isTurnOff) {
-                   await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.Completed });
+                   // Stopping water: Set status to Completed AND stamp End Date
+                   await updateWaterOrder(order.id, { 
+                       ...order, 
+                       status: WaterOrderStatus.Completed,
+                       deliveryEndDate: todayStr
+                   });
               } else {
+                   // Starting water
                    await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.InProgress });
               }
           } else if (order.status === WaterOrderStatus.InProgress) {
-              await updateWaterOrder(order.id, { ...order, status: WaterOrderStatus.Completed });
+              // Stopping water
+              await updateWaterOrder(order.id, { 
+                  ...order, 
+                  status: WaterOrderStatus.Completed,
+                  deliveryEndDate: todayStr
+               });
           }
           await refreshWaterOrders();
       } catch (e) {
@@ -197,6 +210,8 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   const handleScan = async (data: string) => {
     setIsScanning(false);
     if (!scanTargetOrder) return;
+
+    const todayStr = new Date().toISOString().split('T')[0];
 
     try {
       const { action, fieldId, fieldName } = JSON.parse(data);
@@ -214,7 +229,11 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                   alert("Error: Scanned a 'Start' QR code but this is a Turn Off order.");
                   return;
               }
-              await updateWaterOrder(scanTargetOrder.id, { ...scanTargetOrder, status: WaterOrderStatus.Completed });
+              await updateWaterOrder(scanTargetOrder.id, { 
+                  ...scanTargetOrder, 
+                  status: WaterOrderStatus.Completed,
+                  deliveryEndDate: todayStr
+              });
               alert(`SUCCESS: Water Delivery STOPPED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
           } else {
               if (action !== 'start-delivery') {
@@ -229,7 +248,11 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
               alert("Error: Scanned a 'Start' QR code but trying to Stop delivery.");
               return;
           }
-          await updateWaterOrder(scanTargetOrder.id, { ...scanTargetOrder, status: WaterOrderStatus.Completed });
+          await updateWaterOrder(scanTargetOrder.id, { 
+              ...scanTargetOrder, 
+              status: WaterOrderStatus.Completed,
+              deliveryEndDate: todayStr
+          });
            alert(`SUCCESS: Water Delivery STOPPED for Lateral ${scanTargetOrder.lateral || scanTargetOrder.lateralId}.`);
       }
 
