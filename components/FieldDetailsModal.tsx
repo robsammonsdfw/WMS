@@ -25,7 +25,12 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
   // --- Real-Time Calculations ---
 
   // 1. Calculate Rate
-  const runningInches = activeOrder?.requestedInches || field.currentRunningInches || 0;
+  // Fix: Fallback to requestedAmount * 25 (converting AFPD back to Inches) if requestedInches is missing
+  const runningInches = activeOrder?.requestedInches 
+    || (activeOrder?.requestedAmount ? activeOrder.requestedAmount * 25 : 0)
+    || field.currentRunningInches 
+    || 0;
+    
   // Conversion rule: 25 Miner's Inches = 1 Acre-Foot per Day (AFPD)
   const afpd = runningInches / 25; 
 
@@ -153,7 +158,7 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                     <div className="text-white/80 font-black text-xl uppercase tracking-tight">
                         {isRunning ? (
                             <div className="flex flex-col gap-1">
-                                <span>CURRENTLY RUNNING: {runningInches}" / {afpd.toFixed(1)} AFPD</span>
+                                <span>CURRENTLY RUNNING: {runningInches.toFixed(0)}" / {afpd.toFixed(1)} AFPD</span>
                                 <span className="text-xs opacity-75">SESSION TOTAL: {currentRunAF.toFixed(2)} AF</span>
                             </div>
                         ) : (

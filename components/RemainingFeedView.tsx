@@ -52,7 +52,11 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
         const durationDays = calculateDaysSince(lastOrder?.deliveryStartDate);
 
         // 4. Rate and Allotment
-        const runningInches = activeOrder?.requestedInches || field.currentRunningInches || 0;
+        const runningInches = activeOrder?.requestedInches 
+            || (activeOrder?.requestedAmount ? activeOrder.requestedAmount * 25 : 0)
+            || field.currentRunningInches 
+            || 0;
+            
         const afpd = runningInches / 25; // 25" = 1 AF per day
         const allotmentRemaining = (field.waterAllotment || 0) - (field.allotmentUsed || 0);
 
@@ -73,7 +77,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
             {/* Currently Running Rate */}
             <div className="text-white font-black text-xl uppercase tracking-tight">
                 {isRunning ? (
-                    <>CURRENTLY {runningInches}" / {afpd.toFixed(1)} ACFT</>
+                    <>CURRENTLY {runningInches.toFixed(0)}" / {afpd.toFixed(1)} ACFT</>
                 ) : (
                     <>CURRENTLY OFFLINE</>
                 )}
