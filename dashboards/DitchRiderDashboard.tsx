@@ -28,7 +28,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
           } catch (e) { console.error("Failed to parse saved assignments", e); }
       }
       // Default fallback
-      return (user.assignedLaterals || []).map(l => l.toLowerCase());
+      return (user.assignedLaterals || []).map(l => l.toLowerCase().trim());
   });
   
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -45,37 +45,41 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   }, []);
 
   // Derive all unique laterals from the database (Fields + Orders + DB Laterals) for the config menu
+  // Deduplicate case-insensitively and trim whitespace
   const availableLaterals = useMemo(() => {
-    const lats = new Set<string>();
+    const uniqueMap = new Map<string, string>(); // lowercase -> display
     
+    const add = (val?: string) => {
+        if (!val) return;
+        const trimmed = val.trim();
+        if (!trimmed) return;
+        const lower = trimmed.toLowerCase();
+        if (!uniqueMap.has(lower)) {
+            uniqueMap.set(lower, trimmed);
+        }
+    };
+
     // Add known system laterals from API
     allSystemLaterals.forEach(l => {
-        if(l.name) lats.add(l.name);
-        if(l.id) lats.add(l.id);
+        add(l.name);
+        add(l.id);
     });
 
     // Add inferred from fields (for legacy/direct-type support)
     fields.forEach(f => { 
-        if (f.lateral) lats.add(f.lateral); 
-        // Also check headgates if field has no direct lateral
+        add(f.lateral);
         f.headgates?.forEach(hg => {
-            if (hg.lateral) lats.add(hg.lateral);
-            if (hg.lateral_name) lats.add(hg.lateral_name);
+            add(hg.lateral);
+            add(hg.lateral_name);
         })
     });
     // Add any laterals found in active orders just in case
     waterOrders.forEach(o => {
-        if (o.lateral) lats.add(o.lateral);
-        if (o.lateralId) lats.add(o.lateralId);
+        add(o.lateral);
+        add(o.lateralId);
     });
     
-    // Convert to array, trim, lowercase for uniqueness check, then filter empty
-    const unique = Array.from(lats)
-        .map(l => l.trim())
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-
-    return unique;
+    return Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, [fields, waterOrders, allSystemLaterals]);
 
   // Filter Orders based on Local Assignments + Status (Approved OR InProgress)
@@ -86,8 +90,9 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
           if (!isActionable) return false;
 
           // Check Lateral Assignment against LOCAL state
-          const orderLatId = (order.lateralId || '').toLowerCase();
-          const orderLatName = (order.lateral || '').toLowerCase();
+          // Robust comparison: handle nulls, trim whitespace, lowercase
+          const orderLatId = (order.lateralId || '').trim().toLowerCase();
+          const orderLatName = (order.lateral || '').trim().toLowerCase();
           
           // If the order has NO lateral assigned, show it anyway so it isn't lost
           if (!orderLatId && !orderLatName) return true;
@@ -155,7 +160,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
   }, [groupedOrders]);
 
   const toggleLateral = (lat: string) => {
-    const lower = lat.toLowerCase();
+    const lower = lat.trim().toLowerCase();
     setMyLaterals(prev => {
         const newState = prev.includes(lower) ? prev.filter(l => l !== lower) : [...prev, lower];
         localStorage.setItem(`ditch-rider-assignments-${user.id}`, JSON.stringify(newState));
@@ -444,7 +449,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                                   <span className="font-black text-gray-700 uppercase">Lateral {lat}</span>
                                   <input 
                                       type="checkbox" 
-                                      checked={myLaterals.includes(lat.toLowerCase())}
+                                      checked={myLaterals.includes(lat.trim().toLowerCase())}
                                       onChange={() => toggleLateral(lat)}
                                       className="w-6 h-6 rounded-md border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
