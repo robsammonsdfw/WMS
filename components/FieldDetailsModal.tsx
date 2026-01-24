@@ -65,7 +65,8 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
        } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
            const endParts = order.deliveryEndDate.split('-');
            const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
-           duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+           // Add +1 day for inclusive end date calculation, fixing the issue where usage drops to 0
+           duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
        } 
        return sum + (duration * rate);
   }, 0);

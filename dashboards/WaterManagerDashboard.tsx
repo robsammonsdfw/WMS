@@ -108,7 +108,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
             const endParts = order.deliveryEndDate.split('-');
             const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
-            duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+            // Use inclusive date logic (+1 day) for completed orders to ensure usage isn't zeroed out
+            duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         }
         return sum + (duration * rate);
     }, 0);
@@ -184,7 +185,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             name: newFieldName, 
             companyName: newCompName, 
             address: newAddr, 
-            phone: newPhone,
+            phone: newPhone, 
             crop: newFieldCrop, 
             acres: parseFloat(newFieldAcres) || 0,
             totalWaterAllocation: parseFloat(newFieldAlloc) || 0,

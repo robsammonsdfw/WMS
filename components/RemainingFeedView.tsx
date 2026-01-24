@@ -106,7 +106,8 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
                  // Completed Run with End Date
                  const endParts = order.deliveryEndDate.split('-');
                  const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
-                 duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+                 // Add +1 day to inclusive end date to fix data loss on completed orders
+                 duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
              } 
              // Note: If Completed but no EndDate, we can't calculate usage reliably, skip or assume 0.
              
