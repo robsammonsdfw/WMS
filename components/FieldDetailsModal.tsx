@@ -1,31 +1,59 @@
 
 import React, { useEffect, useState } from 'react';
-import { Field, WaterOrder, WaterOrderStatus, WaterOrderType } from '../types';
-import { XCircleIcon, DocumentAddIcon } from './icons';
+import { Field, WaterOrder, WaterOrderStatus, WaterOrderType, WaterAccount } from '../types';
+import { XCircleIcon, DocumentAddIcon, CheckCircleIcon, RefreshIcon } from './icons';
+import { getWaterAccounts, createField } from '../services/api';
 
 interface FieldDetailsModalProps {
   field: Field;
   orders: WaterOrder[];
   onClose: () => void;
+  onUpdate: () => Promise<void>;
   onCreateOrder: (type: WaterOrderType) => void;
 }
 
-const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, onClose, onCreateOrder }) => {
+const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, onClose, onUpdate, onCreateOrder }) => {
   // State for real-time updates
   const [now, setNow] = useState(new Date());
+  
+  // State for Account Editing
+  const [isEditingAccount, setIsEditingAccount] = useState(false);
+  const [editAccountNum, setEditAccountNum] = useState(field.primaryAccountNumber || '');
+  const [availableAccounts, setAvailableAccounts] = useState<WaterAccount[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000); // Update every second
+    // Fetch accounts for the dropdown
+    getWaterAccounts().then(setAvailableAccounts).catch(console.error);
     return () => clearInterval(timer);
   }, []);
 
   const activeOrder = orders.find(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
   const isRunning = !!activeOrder;
 
+  const handleSaveAccount = async () => {
+      setIsSaving(true);
+      try {
+          // We use createField (upsert) to update the existing field with the new account number
+          // We must ensure all other field properties are passed back to avoid data loss
+          await createField({
+              ...field,
+              primaryAccountNumber: editAccountNum
+          });
+          await onUpdate(); // Refresh parent data
+          setIsEditingAccount(false);
+      } catch (error) {
+          alert("Failed to update account number. Please try again.");
+          console.error(error);
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
   // --- Real-Time Calculations ---
 
   // 1. Calculate Rate
-  // Fix: Fallback to requestedAmount * 25 (converting AFPD back to Inches) if requestedInches is missing
   const runningInches = activeOrder?.requestedInches 
     || (activeOrder?.requestedAmount ? activeOrder.requestedAmount * 25 : 0)
     || field.currentRunningInches 
@@ -65,7 +93,6 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
        } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
            const endParts = order.deliveryEndDate.split('-');
            const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
-           // Add +1 day for inclusive end date calculation, fixing the issue where usage drops to 0
            duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
        } 
        return sum + (duration * rate);
@@ -75,7 +102,6 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
   const finalUsage = Math.max(Number(field.allotmentUsed || 0), calculatedTotalUsage);
 
   const allocationTotal = Number(field.totalWaterAllocation) || 0;
-  // Allocation assumes same usage for now, or field.waterUsed if tracked separately
   const allocationRemaining = Math.max(0, allocationTotal - Math.max(Number(field.waterUsed || 0), calculatedTotalUsage));
 
   const allotmentTotal = Number(field.waterAllotment) || 0;
@@ -224,9 +250,39 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                             <span className="text-[10px] font-black text-gray-400 uppercase">Headgate / Tap</span>
                             <span className="font-black text-gray-900">{field.tapNumber || field.headgateIds?.[0] || "Not Set"}</span>
                         </div>
+                        
+                        {/* Primary Account Editable Field */}
                         <div className="flex justify-between items-center border-b border-gray-200 pb-2 bg-emerald-50 px-2 -mx-2 rounded">
                             <span className="text-[10px] font-black text-emerald-600 uppercase">Primary Billing Account</span>
-                            <span className="font-black text-emerald-900 text-sm">{field.primaryAccountNumber || "Unassigned"}</span>
+                            
+                            {isEditingAccount ? (
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        list="edit-accounts-list"
+                                        className="w-24 text-sm font-bold border rounded px-1" 
+                                        value={editAccountNum}
+                                        onChange={(e) => setEditAccountNum(e.target.value)}
+                                    />
+                                    <datalist id="edit-accounts-list">
+                                        {availableAccounts.map(a => <option key={a.accountNumber} value={a.accountNumber}>{a.ownerName}</option>)}
+                                    </datalist>
+                                    <button onClick={handleSaveAccount} disabled={isSaving} className="text-green-600 hover:text-green-800">
+                                        {isSaving ? <RefreshIcon className="h-4 w-4 animate-spin"/> : <CheckCircleIcon className="h-4 w-4" />}
+                                    </button>
+                                    <button onClick={() => { setIsEditingAccount(false); setEditAccountNum(field.primaryAccountNumber || ''); }} className="text-red-500 hover:text-red-700">
+                                        <XCircleIcon className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                    <span className="font-black text-emerald-900 text-sm">{field.primaryAccountNumber || "Unassigned"}</span>
+                                    <button onClick={() => setIsEditingAccount(true)} className="text-gray-400 hover:text-gray-600" title="Edit Primary Account">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
