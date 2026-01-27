@@ -1,11 +1,12 @@
 
-import React, { useState, useMemo } from 'react';
-import { Field, WaterOrderType } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Field, WaterOrderType, WaterAccount } from '../types';
 import { XCircleIcon, DocumentAddIcon } from './icons';
+import { getWaterAccounts } from '../services/api';
 
 interface NewWaterOrderModalProps {
   onClose: () => void;
-  onOrderCreate: (data: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; deliveryEndDate?: string; }) => void;
+  onOrderCreate: (data: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; deliveryEndDate?: string; accountNumber?: string; }) => void;
   fields: Field[];
   initialFieldId?: string;
   initialOrderType: WaterOrderType;
@@ -16,15 +17,32 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
   const [inchesRequested, setInchesRequested] = useState<string>('');
   const [deliveryStartDate, setDeliveryStartDate] = useState<string>('');
   const [deliveryEndDate, setDeliveryEndDate] = useState<string>('');
+  const [accountNumber, setAccountNumber] = useState<string>('');
+  const [availableAccounts, setAvailableAccounts] = useState<WaterAccount[]>([]);
   const [error, setError] = useState('');
 
   const isTurnOn = initialOrderType === WaterOrderType.TurnOn;
 
   const selectedField = useMemo(() => fields.find(f => f.id === fieldId), [fieldId, fields]);
   
+  // Fetch available accounts on load
+  useEffect(() => {
+      getWaterAccounts().then(setAvailableAccounts).catch(console.error);
+  }, []);
+
+  // When field changes, update the default account number
+  useEffect(() => {
+      if (selectedField?.primaryAccountNumber) {
+          setAccountNumber(selectedField.primaryAccountNumber);
+      } else {
+          setAccountNumber('');
+      }
+  }, [selectedField]);
+
+  // Derive account stats
+  const selectedAccount = useMemo(() => availableAccounts.find(a => a.accountNumber === accountNumber), [accountNumber, availableAccounts]);
+
   // Get today's date in LOCAL timezone (YYYY-MM-DD)
-  // New Date() gives local time, but toISOString() converts to UTC.
-  // We construct the string manually to ensure it stays in the user's timezone.
   const today = useMemo(() => {
     const d = new Date();
     const year = d.getFullYear();
@@ -79,6 +97,7 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
       requestedAmount: parseFloat(amountAF.toFixed(2)),
       deliveryStartDate,
       deliveryEndDate: isTurnOn ? (deliveryEndDate || undefined) : undefined,
+      accountNumber: accountNumber || undefined
     });
   };
 
@@ -91,7 +110,7 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
       aria-labelledby="new-order-title"
     >
       <div 
-        className="bg-white rounded-lg shadow-xl p-6 sm:p-8 w-full max-w-lg relative" 
+        className="bg-white rounded-lg shadow-xl p-6 sm:p-8 w-full max-w-lg relative max-h-[90vh] overflow-y-auto" 
         onClick={e => e.stopPropagation()}
       >
         <button
@@ -143,6 +162,32 @@ const NewWaterOrderModal: React.FC<NewWaterOrderModalProps> = ({ onClose, onOrde
                          <p className="col-span-2 text-xs text-blue-600 italic">
                              *Field has {selectedField.headgates.length} headgates available. Order defaults to primary.
                          </p>
+                    )}
+                </div>
+            )}
+
+            {/* Account Selection */}
+            {isTurnOn && (
+                <div className="pt-2 border-t border-gray-100">
+                    <label htmlFor="account" className="block text-sm font-medium text-gray-700">Billing Account Number</label>
+                    <input 
+                        list="account-list" 
+                        value={accountNumber} 
+                        onChange={e => setAccountNumber(e.target.value)}
+                        className="mt-1 block w-full px-3 py-2 border border-emerald-300 rounded-md shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm"
+                        placeholder="Search or Enter Account #..."
+                    />
+                    <datalist id="account-list">
+                        {availableAccounts.map(a => <option key={a.accountNumber} value={a.accountNumber}>{a.ownerName} (Allot: {a.totalAllotment})</option>)}
+                    </datalist>
+                    {selectedAccount ? (
+                        <p className="text-xs text-emerald-600 mt-1 font-bold">
+                            Verified Account: {selectedAccount.ownerName} | Total Allotment: {selectedAccount.totalAllotment} AF
+                        </p>
+                    ) : accountNumber ? (
+                         <p className="text-xs text-yellow-600 mt-1">Warning: Account not found in ledger. Proceeding as ad-hoc.</p>
+                    ) : (
+                         <p className="text-xs text-gray-400 mt-1">Leave blank to use Legacy Field Allotment</p>
                     )}
                 </div>
             )}

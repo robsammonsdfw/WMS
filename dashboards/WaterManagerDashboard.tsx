@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Field, WaterOrder, WaterOrderStatus, WaterOrderType, Lateral, Headgate } from '../types';
+import { User, Field, WaterOrder, WaterOrderStatus, WaterOrderType, Lateral, Headgate, WaterAccount } from '../types';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
 import SeasonStatistics from '../components/SeasonStatistics';
 import FieldDetailsModal from '../components/FieldDetailsModal';
 import { 
     WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, 
-    RefreshIcon, ChartBarIcon as ViewGridIcon, TrashIcon
+    RefreshIcon, ChartBarIcon as ViewGridIcon, TrashIcon, UserGroupIcon
 } from '../components/icons';
 import QRCodeModal from '../components/QRCodeModal';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
@@ -16,7 +16,8 @@ import RemainingFeedView from '../components/RemainingFeedView';
 import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
 import { 
     createWaterOrder, updateWaterOrder, resetDatabase, 
-    getLaterals, getHeadgates, createField, deleteField 
+    getLaterals, getHeadgates, createField, deleteField, 
+    getWaterAccounts, createWaterAccount 
 } from '../services/api';
 
 interface WaterManagerDashboardProps {
@@ -27,7 +28,7 @@ interface WaterManagerDashboardProps {
   refreshFields: () => Promise<void>;
 }
 
-type ViewMode = 'standard' | 'feed' | 'admin';
+type ViewMode = 'standard' | 'feed' | 'admin' | 'accounts';
 
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders, refreshFields }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('standard');
@@ -41,6 +42,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [now, setNow] = useState(new Date());
   
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
+  const [accounts, setAccounts] = useState<WaterAccount[]>([]);
 
   // Field Registry States
   const [newFieldId, setNewFieldId] = useState('');
@@ -55,16 +57,34 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newFieldAllotment, setNewFieldAllotment] = useState('');
   const [newLatCoord, setNewLatCoord] = useState('');
   const [newLngCoord, setNewLngCoord] = useState('');
+  const [newPrimaryAccount, setNewPrimaryAccount] = useState('');
   
   // New "Direct Typed" Infrastructure States
   const [newTypedLateral, setNewTypedLateral] = useState('');
   const [newTypedHeadgate, setNewTypedHeadgate] = useState('');
+
+  // Account Registry States
+  const [newAccNumber, setNewAccNumber] = useState('');
+  const [newAccOwner, setNewAccOwner] = useState('');
+  const [newAccAllotment, setNewAccAllotment] = useState('');
 
   // Timer for real-time updates
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    // Fetch accounts whenever viewing admin or accounts, or for modal population
+    fetchAccounts();
+  }, [viewMode]);
+
+  const fetchAccounts = async () => {
+      try {
+          const accs = await getWaterAccounts();
+          setAccounts(accs);
+      } catch(e) { console.error(e); }
+  };
 
   useEffect(() => {
     if (viewMode === 'admin') fetchAdminData();
@@ -121,6 +141,31 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     return { used, total, remaining };
   };
 
+  // Helper to Calculate Real-Time Usage per ACCOUNT
+  const calculateAccountStats = (account: WaterAccount) => {
+      // Find orders tagged with this account number
+      const accountOrders = waterOrders.filter(o => o.accountNumber === account.accountNumber);
+      
+      const usage = accountOrders.reduce((sum, order) => {
+        const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
+        let duration = 0;
+        const startParts = order.deliveryStartDate.split('-');
+        const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+
+        if (order.status === WaterOrderStatus.InProgress) {
+             duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
+             const endParts = order.deliveryEndDate.split('-');
+             const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
+             duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        }
+        return sum + (duration * rate);
+      }, 0);
+
+      const total = Number(account.totalAllotment) || 0;
+      return { used: usage, total, remaining: Math.max(0, total - usage) };
+  };
+
   // Aggregated Stats
   const totalWaterUsed = fields.reduce((sum, field) => sum + calculateFieldStats(field).used, 0);
   const totalAllocation = fields.reduce((sum, field) => sum + (Number(field.totalWaterAllocation) || 0), 0);
@@ -135,6 +180,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         await resetDatabase();
         await refreshWaterOrders();
         await refreshFields();
+        setAccounts([]);
         alert("Database reset successfully.");
         window.location.reload(); 
       } catch (err: any) {
@@ -195,18 +241,34 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             owner: newFieldOwner,
             lateral: newTypedLateral,
             tapNumber: newTypedHeadgate,
-            headgateIds: newTypedHeadgate ? [newTypedHeadgate] : [] 
+            headgateIds: newTypedHeadgate ? [newTypedHeadgate] : [],
+            primaryAccountNumber: newPrimaryAccount
         });
         
         // Reset states
         setNewFieldId(''); setNewFieldName(''); setNewCompName(''); setNewAddr(''); setNewPhone(''); 
         setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldAlloc(''); 
         setNewFieldAllotment(''); setNewLatCoord(''); setNewLngCoord('');
-        setNewTypedLateral(''); setNewTypedHeadgate('');
+        setNewTypedLateral(''); setNewTypedHeadgate(''); setNewPrimaryAccount('');
 
         await refreshFields(); 
         alert("Field Registry profile created.");
     } catch (err: any) { alert(err.message); }
+  };
+
+  const handleCreateAccount = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newAccNumber || !newAccOwner) return alert("Account Number and Owner required");
+      try {
+          await createWaterAccount({
+              accountNumber: newAccNumber,
+              ownerName: newAccOwner,
+              totalAllotment: parseFloat(newAccAllotment) || 0
+          });
+          setNewAccNumber(''); setNewAccOwner(''); setNewAccAllotment('');
+          await fetchAccounts();
+          alert("Account Created.");
+      } catch (e: any) { alert(e.message); }
   };
 
   const handleManualOrderCreate = async (orderData: { 
@@ -215,6 +277,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     requestedAmount: number; 
     deliveryStartDate: string; 
     deliveryEndDate?: string;
+    accountNumber?: string;
   }) => {
     try {
       const field = fields.find(f => f.id === orderData.fieldId);
@@ -228,7 +291,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         orderDate: new Date().toISOString().split('T')[0],
         lateralId: field.lateral || '',
         tapNumber: field.tapNumber || '',
-        headgateId: field.headgateIds?.[0] || ''
+        headgateId: field.headgateIds?.[0] || '',
+        accountNumber: orderData.accountNumber // Pass account number to backend
       });
 
       setIsNewOrderModalOpen(false);
@@ -238,6 +302,68 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       alert("Failed to create order: " + (err.message || "Unknown error"));
     }
   };
+
+  const renderAccountsView = () => (
+      <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
+          {/* Add Account Form */}
+           <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden">
+                <div className="bg-emerald-900 p-8 text-white">
+                    <h3 className="text-2xl font-black uppercase tracking-tight">Water Bank Ledger</h3>
+                    <p className="text-emerald-200 font-bold text-sm">Manage Account Allotments and Balance</p>
+                </div>
+                <div className="p-8">
+                     <form onSubmit={handleCreateAccount} className="space-y-6 bg-emerald-50/50 p-8 rounded-[2.5rem] border border-emerald-100 shadow-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Account Number</label>
+                                <input value={newAccNumber} onChange={e => setNewAccNumber(e.target.value)} placeholder="ACCT-2024-001" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner Name</label>
+                                <input value={newAccOwner} onChange={e => setNewAccOwner(e.target.value)} placeholder="Entity Name" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+                            </div>
+                             <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Total Allotment (AF)</label>
+                                <input type="number" value={newAccAllotment} onChange={e => setNewAccAllotment(e.target.value)} placeholder="1000.00" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+                            </div>
+                        </div>
+                        <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-emerald-700 shadow-xl transition-all">Create Account Ledger</button>
+                     </form>
+                </div>
+           </div>
+
+           {/* Accounts List */}
+           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+               {accounts.map(acc => {
+                   const stats = calculateAccountStats(acc);
+                   return (
+                       <div key={acc.accountNumber} className="bg-white p-8 rounded-3xl shadow-lg border border-gray-100 relative overflow-hidden group">
+                           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                               <DocumentReportIcon className="h-24 w-24 text-emerald-900" />
+                           </div>
+                           <h4 className="text-2xl font-black text-gray-900">{acc.accountNumber}</h4>
+                           <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">{acc.ownerName}</p>
+                           
+                           <div className="space-y-4">
+                               <div className="flex justify-between items-end border-b border-gray-100 pb-2">
+                                   <span className="text-xs font-black text-gray-400 uppercase">Total Cash (Allotment)</span>
+                                   <span className="text-xl font-black text-gray-900">{stats.total.toFixed(2)} AF</span>
+                               </div>
+                               <div className="flex justify-between items-end border-b border-gray-100 pb-2">
+                                   <span className="text-xs font-black text-gray-400 uppercase">Spent (Used)</span>
+                                   <span className="text-xl font-black text-red-500">{stats.used.toFixed(2)} AF</span>
+                               </div>
+                               <div className="flex justify-between items-end">
+                                   <span className="text-xs font-black text-gray-400 uppercase">Available Balance</span>
+                                   <span className="text-2xl font-black text-emerald-600">{stats.remaining.toFixed(2)} AF</span>
+                               </div>
+                           </div>
+                       </div>
+                   )
+               })}
+           </div>
+      </div>
+  );
 
   const renderAdminView = () => (
     <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
@@ -299,12 +425,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner Name</label>
                                 <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="John Doe" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
                             </div>
+                            {/* Legacy Allocation Fields - Optional if using Accounts */}
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Season AF</label>
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Season AF (Legacy)</label>
                                 <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="400" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
                             </div>
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Allotment AF</label>
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Allotment AF (Legacy)</label>
                                 <input type="number" value={newFieldAllotment} onChange={e => setNewFieldAllotment(e.target.value)} placeholder="250" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
@@ -329,6 +456,12 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                 <label className="text-[10px] font-black text-indigo-600 uppercase ml-1 tracking-widest">Primary Headgate / Tap ID (Direct Type)</label>
                                 <input value={newTypedHeadgate} onChange={e => setNewTypedHeadgate(e.target.value)} placeholder="e.g. HG-A" className="w-full px-4 py-3 border-2 border-indigo-200 rounded-xl font-black text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none bg-white" />
                                 <p className="text-[9px] font-bold text-gray-400 ml-1 uppercase">Enter the main tap point ID</p>
+                            </div>
+                            {/* New Account Input */}
+                             <div className="space-y-1 col-span-1 md:col-span-2 mt-4">
+                                <label className="text-[10px] font-black text-emerald-600 uppercase ml-1 tracking-widest">Primary Account Number (Billing)</label>
+                                <input value={newPrimaryAccount} onChange={e => setNewPrimaryAccount(e.target.value)} placeholder="e.g. ACCT-12345" className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl font-black text-emerald-900 focus:ring-2 focus:ring-emerald-500 outline-none bg-white" />
+                                <p className="text-[9px] font-bold text-gray-400 ml-1 uppercase">The bank account that holds the water allotment</p>
                             </div>
                         </div>
 
@@ -357,6 +490,11 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         <div className="px-2 py-1 bg-blue-50 text-[9px] font-black text-blue-600 rounded-lg uppercase">Lat: {f.lateral || 'Direct'}</div>
                         <div className="px-2 py-1 bg-green-50 text-[9px] font-black text-green-600 rounded-lg uppercase">HG: {f.tapNumber || 'Direct'}</div>
                     </div>
+                     <div className="mt-2">
+                         <span className="text-[9px] font-black text-emerald-600 uppercase bg-emerald-50 px-2 py-1 rounded-lg block text-center">
+                             ACCT: {f.primaryAccountNumber || 'Unassigned'}
+                         </span>
+                     </div>
                 </div>
             ))}
         </div>
@@ -376,6 +514,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
           <div className="flex bg-gray-100 rounded-[2rem] p-1.5 border-2 border-white shadow-inner">
             <button onClick={() => setViewMode('standard')} className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'standard' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}>Standard</button>
             <button onClick={() => setViewMode('feed')} className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'feed' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}>Remaining Feed</button>
+            <button onClick={() => setViewMode('accounts')} className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'accounts' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}>Accounts</button>
             <button onClick={() => setViewMode('admin')} className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'admin' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}>Infrastructure</button>
           </div>
           <div className="flex gap-2">
@@ -384,7 +523,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
           </div>
       </div>
       
-      {viewMode === 'admin' ? renderAdminView() : viewMode === 'feed' ? (
+      {viewMode === 'admin' ? renderAdminView() : viewMode === 'accounts' ? renderAccountsView() : viewMode === 'feed' ? (
         <RemainingFeedView fields={fields} waterOrders={waterOrders} onFieldClick={setSelectedFieldDetails} />
       ) : (
         <>
@@ -405,7 +544,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         <thead className="bg-gray-50">
                             <tr>
                                 <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Field</th>
-                                <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Crop</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Account</th>
                                 <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Balance</th>
                                 <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
                             </tr>
@@ -416,7 +555,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                 return (
                                 <tr key={field.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedFieldDetails(field)}>
                                     <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{field.name}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{field.crop}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{field.primaryAccountNumber || '—'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap font-black text-blue-600">{stats.remaining.toFixed(1)} / {stats.total.toFixed(1)} AF</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <div className="flex items-center gap-4">

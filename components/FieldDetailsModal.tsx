@@ -224,6 +224,10 @@ const FieldDetailsModal: React.FC<FieldDetailsModalProps> = ({ field, orders, on
                             <span className="text-[10px] font-black text-gray-400 uppercase">Headgate / Tap</span>
                             <span className="font-black text-gray-900">{field.tapNumber || field.headgateIds?.[0] || "Not Set"}</span>
                         </div>
+                        <div className="flex justify-between items-center border-b border-gray-200 pb-2 bg-emerald-50 px-2 -mx-2 rounded">
+                            <span className="text-[10px] font-black text-emerald-600 uppercase">Primary Billing Account</span>
+                            <span className="font-black text-emerald-900 text-sm">{field.primaryAccountNumber || "Unassigned"}</span>
+                        </div>
                     </div>
                 </div>
             </div>

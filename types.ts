@@ -53,6 +53,13 @@ export interface Account {
   isQueued?: boolean;
 }
 
+export interface WaterAccount {
+  accountNumber: string;
+  ownerName: string;
+  totalAllotment: number;
+  balance?: number; // Calculated on frontend
+}
+
 export interface Field {
   id: string;
   name: string;
@@ -76,6 +83,7 @@ export interface Field {
   tapNumber?: string;
   accounts: Account[];
   currentRunningInches?: number;
+  primaryAccountNumber?: string;
 }
 
 export interface WaterOrder {
@@ -95,6 +103,7 @@ export interface WaterOrder {
   headgateId: string;
   tapNumber: string;
   ditchRiderId?: number;
+  accountNumber?: string;
 }
 
 export interface WaterBankEntry {

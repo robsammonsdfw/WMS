@@ -391,6 +391,9 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
                                                 </div>
                                                 <h4 className="text-xl font-black text-gray-900 leading-tight">{order.fieldName}</h4>
                                                 <p className="text-xs font-bold text-gray-400 uppercase mt-1">{order.orderType}</p>
+                                                {order.accountNumber && (
+                                                    <span className="inline-block mt-2 text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-1 rounded">ACCT: {order.accountNumber}</span>
+                                                )}
                                             </div>
                                             <div className="text-right">
                                                 <span className="block text-2xl font-black text-gray-800">{order.requestedAmount} <span className="text-xs text-gray-400">AF</span></span>

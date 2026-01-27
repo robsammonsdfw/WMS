@@ -1,5 +1,5 @@
 
-import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate } from '../types';
+import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount } from '../types';
 
 const getBaseUrl = () => {
   let url = (window as any).APP_CONFIG?.API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
@@ -13,7 +13,8 @@ const getApiKey = () => (window as any).APP_CONFIG?.API_KEY || '';
 const NUMERIC_FIELDS = [
   'acres', 'totalWaterAllocation', 'waterUsed', 'waterAllotment', 
   'allotmentUsed', 'lat', 'lng', 'requestedAmount', 'requestedInches',
-  'amountAvailable', 'allocationForField', 'usageForField', 'currentRunningInches'
+  'amountAvailable', 'allocationForField', 'usageForField', 'currentRunningInches',
+  'totalAllotment'
 ];
 
 const normalizeData = (data: any): any => {
@@ -81,4 +82,6 @@ export const createLateral = (data: Partial<Lateral>): Promise<any> => apiFetch(
 export const createHeadgate = (data: Partial<Headgate>): Promise<any> => apiFetch('/headgates', { method: 'POST', body: JSON.stringify(data) });
 export const setFieldAccountQueue = (fieldId: string, accountId: number): Promise<any> => apiFetch(`/fields/${fieldId}/queue`, { method: 'PUT', body: JSON.stringify({ accountId }) });
 export const getWaterBank = (): Promise<WaterBankEntry[]> => apiFetch('/water-bank');
+export const getWaterAccounts = (): Promise<WaterAccount[]> => apiFetch('/accounts').catch(() => []);
+export const createWaterAccount = (data: Partial<WaterAccount>): Promise<any> => apiFetch('/accounts', { method: 'POST', body: JSON.stringify(data) });
 export const resetDatabase = (): Promise<any> => apiFetch('/admin/reset-db', { method: 'POST' });
