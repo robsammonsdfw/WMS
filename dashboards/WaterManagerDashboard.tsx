@@ -7,7 +7,7 @@ import SeasonStatistics from '../components/SeasonStatistics';
 import FieldDetailsModal from '../components/FieldDetailsModal';
 import { 
     WaterDropIcon, DocumentReportIcon, ChartBarIcon, QrCodeIcon, 
-    RefreshIcon, ChartBarIcon as ViewGridIcon, TrashIcon, UserGroupIcon
+    RefreshIcon, ChartBarIcon as ViewGridIcon, TrashIcon, UserGroupIcon, PlusIcon, XCircleIcon
 } from '../components/icons';
 import QRCodeModal from '../components/QRCodeModal';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
@@ -62,6 +62,9 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   // New "Direct Typed" Infrastructure States
   const [newTypedLateral, setNewTypedLateral] = useState('');
   const [newTypedHeadgate, setNewTypedHeadgate] = useState('');
+
+  // Editing State
+  const [isEditingField, setIsEditingField] = useState(false);
 
   // Account Registry States
   const [newAccNumber, setNewAccNumber] = useState('');
@@ -222,6 +225,38 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     }
   };
 
+  // Populate form with field data for editing
+  const handleEditField = (field: Field) => {
+    setNewFieldId(field.id);
+    setNewFieldName(field.name);
+    setNewCompName(field.companyName || '');
+    setNewAddr(field.address || '');
+    setNewPhone(field.phone || '');
+    setNewFieldCrop(field.crop);
+    setNewFieldAcres(field.acres.toString());
+    setNewFieldOwner(field.owner || '');
+    setNewFieldAlloc(field.totalWaterAllocation.toString());
+    setNewFieldAllotment(field.waterAllotment?.toString() || '');
+    setNewLatCoord(field.lat?.toString() || '');
+    setNewLngCoord(field.lng?.toString() || '');
+    setNewTypedLateral(field.lateral || '');
+    setNewTypedHeadgate(field.tapNumber || '');
+    setNewPrimaryAccount(field.primaryAccountNumber || '');
+    
+    setIsEditingField(true);
+    // Scroll to top to see the form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleClearForm = (e?: React.MouseEvent) => {
+    if(e) e.preventDefault();
+    setNewFieldId(''); setNewFieldName(''); setNewCompName(''); setNewAddr(''); setNewPhone(''); 
+    setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldAlloc(''); 
+    setNewFieldAllotment(''); setNewLatCoord(''); setNewLngCoord('');
+    setNewTypedLateral(''); setNewTypedHeadgate(''); setNewPrimaryAccount('');
+    setIsEditingField(false);
+  };
+
   const handleAddField = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFieldId || !newFieldName) return alert("Field ID and Name required.");
@@ -245,14 +280,9 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             primaryAccountNumber: newPrimaryAccount
         });
         
-        // Reset states
-        setNewFieldId(''); setNewFieldName(''); setNewCompName(''); setNewAddr(''); setNewPhone(''); 
-        setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldAlloc(''); 
-        setNewFieldAllotment(''); setNewLatCoord(''); setNewLngCoord('');
-        setNewTypedLateral(''); setNewTypedHeadgate(''); setNewPrimaryAccount('');
-
+        handleClearForm();
         await refreshFields(); 
-        alert("Field Registry profile created.");
+        alert(isEditingField ? "Field Profile Updated." : "Field Registry profile created.");
     } catch (err: any) { alert(err.message); }
   };
 
@@ -367,55 +397,73 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   const renderAdminView = () => (
     <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
-        <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden">
-            <div className="bg-gray-900 p-8 text-white flex justify-between items-center">
+        <div className={`bg-white rounded-[2rem] shadow-2xl border transition-all overflow-hidden ${isEditingField ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
+            <div className={`p-8 text-white flex justify-between items-center transition-colors ${isEditingField ? 'bg-orange-600' : 'bg-gray-900'}`}>
                 <div>
-                    <h3 className="text-2xl font-black uppercase tracking-tight">Infrastructure Command Center</h3>
-                    <p className="text-gray-400 font-bold text-sm">Register Fields and Direct-Type Asset Mapping</p>
+                    <h3 className="text-2xl font-black uppercase tracking-tight">
+                        {isEditingField ? 'Update Field Profile' : 'Infrastructure Command Center'}
+                    </h3>
+                    <p className={`font-bold text-sm ${isEditingField ? 'text-orange-200' : 'text-gray-400'}`}>
+                        {isEditingField ? 'Editing Existing Field Data' : 'Register Fields and Direct-Type Asset Mapping'}
+                    </p>
                 </div>
                 {isLoadingAdmin && <RefreshIcon className="h-6 w-6 animate-spin text-blue-400" />}
+                {isEditingField && (
+                    <button onClick={handleClearForm} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                        <XCircleIcon className="h-4 w-4" /> Cancel Edit
+                    </button>
+                )}
             </div>
 
             <div className="p-8 space-y-12">
                 <div className="space-y-6">
-                    <div className="flex items-center space-x-3 text-indigo-600">
+                    <div className={`flex items-center space-x-3 ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>
                         <ViewGridIcon className="h-6 w-6" />
-                        <h4 className="text-lg font-black uppercase tracking-widest">Unified Field Profile Registry</h4>
+                        <h4 className="text-lg font-black uppercase tracking-widest">
+                            {isEditingField ? `Editing: ${newFieldName || newFieldId}` : 'Unified Field Profile Registry'}
+                        </h4>
                     </div>
                     
-                    <form onSubmit={handleAddField} className="space-y-8 bg-indigo-50/50 p-8 rounded-[2.5rem] border border-indigo-100 shadow-sm">
+                    <form onSubmit={handleAddField} className={`space-y-8 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingField ? 'bg-orange-50/50 border-orange-100' : 'bg-indigo-50/50 border-indigo-100'}`}>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Field ID</label>
-                                <input value={newFieldId} onChange={e => setNewFieldId(e.target.value)} placeholder="F-001" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input 
+                                    value={newFieldId} 
+                                    onChange={e => setNewFieldId(e.target.value)} 
+                                    placeholder="F-001" 
+                                    // Lock ID editing slightly to prevent accidental dupes, but allow if user really intends to "Clone" or "Rename" logic (Backend uses upsert)
+                                    // For now, we allow editing, but visually indicate it's the key.
+                                    className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500 bg-white' : 'border-gray-200 focus:ring-indigo-500'}`} 
+                                />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Display Name</label>
-                                <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. SOUTH 40" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. SOUTH 40" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Company Name</label>
-                                <input value={newCompName} onChange={e => setNewCompName(e.target.value)} placeholder="Farming Co." className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input value={newCompName} onChange={e => setNewCompName(e.target.value)} placeholder="Farming Co." className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Phone</label>
-                                <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="555-0101" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="555-0101" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                             </div>
                         </div>
                         
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Address</label>
-                                <input value={newAddr} onChange={e => setNewAddr(e.target.value)} placeholder="123 Field Lane" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input value={newAddr} onChange={e => setNewAddr(e.target.value)} placeholder="123 Field Lane" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Crop Type</label>
-                                    <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Corn" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Corn" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Acres</label>
-                                    <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="100" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="100" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                                 </div>
                             </div>
                         </div>
@@ -423,38 +471,37 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner Name</label>
-                                <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="John Doe" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="John Doe" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                             </div>
-                            {/* Legacy Allocation Fields - Optional if using Accounts */}
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Season AF (Legacy)</label>
-                                <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="400" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="400" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Allotment AF (Legacy)</label>
-                                <input type="number" value={newFieldAllotment} onChange={e => setNewFieldAllotment(e.target.value)} placeholder="250" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input type="number" value={newFieldAllotment} onChange={e => setNewFieldAllotment(e.target.value)} placeholder="250" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lat</label>
-                                    <input value={newLatCoord} onChange={e => setNewLatCoord(e.target.value)} placeholder="43.0" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    <input value={newLatCoord} onChange={e => setNewLatCoord(e.target.value)} placeholder="43.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lng</label>
-                                    <input value={newLngCoord} onChange={e => setNewLngCoord(e.target.value)} placeholder="-116.0" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    <input value={newLngCoord} onChange={e => setNewLngCoord(e.target.value)} placeholder="-116.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                                 </div>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-indigo-100">
+                        <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t ${isEditingField ? 'border-orange-200' : 'border-indigo-100'}`}>
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-indigo-600 uppercase ml-1 tracking-widest">Primary Lateral Name (Direct Type)</label>
-                                <input value={newTypedLateral} onChange={e => setNewTypedLateral(e.target.value)} placeholder="e.g. Lateral 8.13" className="w-full px-4 py-3 border-2 border-indigo-200 rounded-xl font-black text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none bg-white" />
+                                <label className={`text-[10px] font-black uppercase ml-1 tracking-widest ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>Primary Lateral Name (Direct Type)</label>
+                                <input value={newTypedLateral} onChange={e => setNewTypedLateral(e.target.value)} placeholder="e.g. Lateral 8.13" className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} />
                                 <p className="text-[9px] font-bold text-gray-400 ml-1 uppercase">Enter the Rider Channel or Lateral ID</p>
                             </div>
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-indigo-600 uppercase ml-1 tracking-widest">Primary Headgate / Tap ID (Direct Type)</label>
-                                <input value={newTypedHeadgate} onChange={e => setNewTypedHeadgate(e.target.value)} placeholder="e.g. HG-A" className="w-full px-4 py-3 border-2 border-indigo-200 rounded-xl font-black text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none bg-white" />
+                                <label className={`text-[10px] font-black uppercase ml-1 tracking-widest ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>Primary Headgate / Tap ID (Direct Type)</label>
+                                <input value={newTypedHeadgate} onChange={e => setNewTypedHeadgate(e.target.value)} placeholder="e.g. HG-A" className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} />
                                 <p className="text-[9px] font-bold text-gray-400 ml-1 uppercase">Enter the main tap point ID</p>
                             </div>
                             {/* New Account Input */}
@@ -465,7 +512,16 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                             </div>
                         </div>
 
-                        <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-indigo-700 shadow-xl transition-all">Register Field profile</button>
+                        <div className="flex gap-4">
+                            {isEditingField && (
+                                <button type="button" onClick={handleClearForm} className="flex-1 bg-gray-200 text-gray-700 py-4 rounded-xl font-black uppercase text-sm hover:bg-gray-300 shadow-xl transition-all">
+                                    Cancel Edit
+                                </button>
+                            )}
+                            <button type="submit" className={`flex-1 text-white py-4 rounded-xl font-black uppercase text-sm shadow-xl transition-all ${isEditingField ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                                {isEditingField ? "Update Field Profile" : "Register Field Profile"}
+                            </button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -473,16 +529,20 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {fields.map(f => (
-                <div key={f.id} onClick={() => setSelectedFieldDetails(f)} className="bg-white p-6 rounded-3xl shadow-lg border border-gray-100 hover:border-indigo-200 transition-colors cursor-pointer group relative">
+                <div 
+                    key={f.id} 
+                    onClick={() => handleEditField(f)} 
+                    className={`bg-white p-6 rounded-3xl shadow-lg border cursor-pointer group relative transition-all hover:-translate-y-1 ${isEditingField && newFieldId === f.id ? 'border-orange-400 ring-2 ring-orange-200 shadow-orange-100' : 'border-gray-100 hover:border-indigo-200'}`}
+                >
                     <button 
                         onClick={(e) => handleDeleteSingleField(e, f.id, f.name)}
-                        className="absolute top-4 right-4 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                        className="absolute top-4 right-4 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 z-10"
                         title="Delete Field Registry"
                     >
                         <TrashIcon className="h-4 w-4" />
                     </button>
                     <div className="flex justify-between items-start mb-2 pr-8">
-                        <p className="font-black text-gray-900 text-lg group-hover:text-indigo-600 transition-colors">{f.name}</p>
+                        <p className={`font-black text-lg transition-colors ${isEditingField && newFieldId === f.id ? 'text-orange-600' : 'text-gray-900 group-hover:text-indigo-600'}`}>{f.name}</p>
                     </div>
                     <span className="text-[8px] font-black bg-gray-100 px-2 py-0.5 rounded uppercase">{f.id}</span>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">{f.companyName || f.owner || 'Farmer'}</p>
@@ -495,6 +555,12 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                              ACCT: {f.primaryAccountNumber || 'Unassigned'}
                          </span>
                      </div>
+                     {/* Edit Mode Indicator Overlay */}
+                     {!isEditingField && (
+                         <div className="absolute inset-0 bg-indigo-900/0 group-hover:bg-indigo-900/5 rounded-3xl transition-colors flex items-center justify-center pointer-events-none">
+                             <span className="opacity-0 group-hover:opacity-100 bg-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm text-indigo-600">Click to Edit</span>
+                         </div>
+                     )}
                 </div>
             ))}
         </div>
