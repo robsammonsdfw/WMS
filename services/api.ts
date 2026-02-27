@@ -2,7 +2,7 @@
 import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount } from '../types';
 
 const getBaseUrl = () => {
-  let url = (window as any).APP_CONFIG?.API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
+  let url = (window as any).APP_CONFIG?.API_BASE_URL || 'ttps://ybbaesm77d2si3m2m4liavhu6i0txdkt.lambda-url.us-west-1.on.aws/v1';
   if (url.endsWith('/')) url = url.slice(0, -1);
   return url;
 };

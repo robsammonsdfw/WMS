@@ -1,4 +1,3 @@
-
 const pg = require("pg");
 let dbClient = null;
 let schemaDone = false;
@@ -103,13 +102,13 @@ exports.handler = async (e) => {
     if (e.httpMethod === 'OPTIONS') return { statusCode: 200, headers: resHeaders, body: '' };
     
     // Robust path parsing
-    let path = (e.path || "/");
+    let path = (e.rawPath || e.path || "/");
     path = path.replace(/^\/(v1|prod|dev|v2)/, ""); 
     path = path.split('?')[0]; 
     path = path.replace(/\/$/, ""); 
     if (path === "") path = "/";
 
-    const method = e.httpMethod;
+    const method = e.httpMethod || (e.requestContext && e.requestContext.http ? e.requestContext.http.method : "GET");
     
     try {
         const client = await getClient();
