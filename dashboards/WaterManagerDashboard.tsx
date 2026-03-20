@@ -117,24 +117,26 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     } catch (e) { console.error(e); } finally { setIsLoadingAdmin(false); }
   };
 
-// Helper to Calculate Real-Time Usage per Field
-const calculateFieldStats = (field: Field) => {
+  // Helper to Calculate Real-Time Usage per Field
+  const calculateFieldStats = (field: Field) => {
     const fieldOrders = waterOrders.filter(o => o.fieldId === field.id);
     const calculatedTotalUsage = fieldOrders.reduce((sum, order) => {
         const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
         let duration = 0;
         
-        // ADDED SAFETY CHECK HERE
+        // NATIVE DATE PARSING: Removes the risky .split('-') approach
         if (order.deliveryStartDate) {
-            const startParts = order.deliveryStartDate.split('-');
-            const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
-
-            if (order.status === WaterOrderStatus.InProgress) {
-                duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-            } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
-                const endParts = order.deliveryEndDate.split('-');
-                const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
-                duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+            const start = new Date(order.deliveryStartDate);
+            // Verify date is valid before doing math
+            if (!isNaN(start.getTime())) {
+                if (order.status === WaterOrderStatus.InProgress) {
+                    duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+                } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
+                    const end = new Date(order.deliveryEndDate);
+                    if (!isNaN(end.getTime())) {
+                        duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                    }
+                }
             }
         }
         return sum + (duration * rate);
@@ -154,17 +156,19 @@ const calculateFieldStats = (field: Field) => {
         const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
         let duration = 0;
         
-        // ADDED SAFETY CHECK HERE
+        // NATIVE DATE PARSING: Removes the risky .split('-') approach
         if (order.deliveryStartDate) {
-            const startParts = order.deliveryStartDate.split('-');
-            const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
-
-            if (order.status === WaterOrderStatus.InProgress) {
-                 duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-            } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
-                 const endParts = order.deliveryEndDate.split('-');
-                 const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
-                 duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+            const start = new Date(order.deliveryStartDate);
+            // Verify date is valid before doing math
+            if (!isNaN(start.getTime())) {
+                if (order.status === WaterOrderStatus.InProgress) {
+                     duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+                } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
+                     const end = new Date(order.deliveryEndDate);
+                     if (!isNaN(end.getTime())) {
+                         duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                     }
+                }
             }
         }
         return sum + (duration * rate);
