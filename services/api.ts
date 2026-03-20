@@ -1,8 +1,8 @@
 import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount, AccountAlert } from '../types';
 
 const getBaseUrl = () => {
-  // HARDCODED to force traffic to the West Coast Lambda and bypass Amplify environment variable traps
-  let url = 'https://ybbaesm77d2si3m2m4liavhu6i0txdkt.lambda-url.us-west-1.on.aws/v1';
+  // Reverted to your original APP_CONFIG logic, pointing to your East Coast API Gateway
+  let url = (window as any).APP_CONFIG?.API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
   if (url.endsWith('/')) url = url.slice(0, -1);
   return url;
 };
