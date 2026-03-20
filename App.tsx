@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, UserRole, WaterOrder, Field } from './types';
 import { USERS } from './constants';
@@ -20,8 +19,9 @@ const App: React.FC = () => {
       setIsLoading(true);
       setError(null);
       const [ordersData, fieldsData] = await Promise.all([getWaterOrders(), getFields()]);
-      setWaterOrders(ordersData);
-      setFields(fieldsData);
+      // DEFENSIVE FIX: Ensure we only store Arrays in state
+      setWaterOrders(Array.isArray(ordersData) ? ordersData : []);
+      setFields(Array.isArray(fieldsData) ? fieldsData : []);
     } catch (err) {
       console.error("Failed to fetch initial data:", err);
       setError("Could not connect to the server. Please check your connection and try again.");
@@ -44,7 +44,7 @@ const App: React.FC = () => {
   const refreshWaterOrders = async () => {
       try {
         const ordersData = await getWaterOrders();
-        setWaterOrders(ordersData);
+        setWaterOrders(Array.isArray(ordersData) ? ordersData : []);
       } catch (err) {
           console.error("Failed to refresh water orders:", err);
           setError("Failed to update water orders. Please try again.");
@@ -54,7 +54,7 @@ const App: React.FC = () => {
   const refreshFields = async () => {
       try {
         const fieldsData = await getFields();
-        setFields(fieldsData);
+        setFields(Array.isArray(fieldsData) ? fieldsData : []);
       } catch (err) {
           console.error("Failed to refresh fields:", err);
       }
