@@ -181,14 +181,18 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         
         if (alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) {
             const stats = calculateAccountStats(acc);
-            const pct = stats.total > 0 ? (stats.used / stats.total) * 100 : 0;
-            if (pct >= alert.thresholdPercent) isTriggered = true;
+            if (stats.total > 0) {
+                const remainingPct = (stats.remaining / stats.total) * 100;
+                if (remainingPct <= alert.thresholdPercent) isTriggered = true;
+            }
         }
         if (alert.alertType === AlertType.Allocation || alert.alertType === AlertType.Both) {
             linkedFields.forEach(f => {
                 const fStats = calculateFieldStats(f);
-                const pct = fStats.total > 0 ? (fStats.used / fStats.total) * 100 : 0;
-                if (pct >= alert.thresholdPercent) isTriggered = true;
+                if (fStats.total > 0) {
+                    const remainingPct = (fStats.remaining / fStats.total) * 100;
+                    if (remainingPct <= alert.thresholdPercent) isTriggered = true;
+                }
             });
         }
 
@@ -422,9 +426,10 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   );
 
   const renderAlertsView = () => {
+      // Create options: 0% to 30%, or 0% to 100%
       const thresholds = showAllThresholds 
-          ? Array.from({length: 20}, (_, i) => (i + 1) * 5) // 5 to 100
-          : Array.from({length: 6}, (_, i) => (i + 1) * 5); // 5 to 30
+          ? Array.from({length: 21}, (_, i) => i * 5)
+          : Array.from({length: 7}, (_, i) => i * 5);
 
       return (
           <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
@@ -450,8 +455,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Alert Trigger Focus</label>
                                     <select value={alertType} onChange={e => setAlertType(e.target.value as AlertType)} className="w-full px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
-                                        <option value={AlertType.Allotment}>Allotment Only (Cash Balance)</option>
-                                        <option value={AlertType.Allocation}>Allocation Only (Field Balance)</option>
+                                        <option value={AlertType.Allotment}>Allotment Only</option>
+                                        <option value={AlertType.Allocation}>Allowance Only</option>
                                         <option value={AlertType.Both}>Alert on Both</option>
                                     </select>
                                 </div>
@@ -460,7 +465,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                     <div className="flex gap-2">
                                         <select value={alertThreshold} onChange={e => setAlertThreshold(Number(e.target.value))} className="flex-1 px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
                                             {thresholds.map(t => (
-                                                <option key={t} value={t}>{t}% Usage Exceeded</option>
+                                                <option key={t} value={t}>{t}% Remaining</option>
                                             ))}
                                         </select>
                                         {!showAllThresholds && (
@@ -495,8 +500,10 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                 ) : alerts.map(alert => (
                                     <tr key={alert.id} className="hover:bg-gray-50">
                                         <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{alert.accountNumber}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold uppercase text-gray-600">{alert.alertType}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap font-black text-rose-600">{alert.thresholdPercent}%</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold uppercase text-gray-600">
+                                            {alert.alertType === AlertType.Allocation ? 'Allowance' : alert.alertType}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap font-black text-rose-600">{alert.thresholdPercent}% Remaining</td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             {alert.isAcknowledged ? 
                                                 <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-black uppercase">Acknowledged</span> : 
@@ -668,13 +675,17 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         let triggered = false;
                         if ((alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) && acc) {
                             const accStats = calculateAccountStats(acc);
-                            const pct = accStats.total > 0 ? (accStats.used / accStats.total) * 100 : 0;
-                            if (pct >= alert.thresholdPercent) triggered = true;
+                            if (accStats.total > 0) {
+                                const remainingPct = (accStats.remaining / accStats.total) * 100;
+                                if (remainingPct <= alert.thresholdPercent) triggered = true;
+                            }
                         }
                         if (alert.alertType === AlertType.Allocation || alert.alertType === AlertType.Both) {
                             const fStats = calculateFieldStats(f);
-                            const pct = fStats.total > 0 ? (fStats.used / fStats.total) * 100 : 0;
-                            if (pct >= alert.thresholdPercent) triggered = true;
+                            if (fStats.total > 0) {
+                                const remainingPct = (fStats.remaining / fStats.total) * 100;
+                                if (remainingPct <= alert.thresholdPercent) triggered = true;
+                            }
                         }
                         if (triggered) isFlashing = true;
                     });
@@ -755,7 +766,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                           <div key={alert.id} className="bg-red-50 p-6 rounded-3xl border border-red-100">
                               <h3 className="text-lg font-black text-red-900 mb-1">Account: {alert.accountNumber}</h3>
                               <p className="text-sm font-bold text-red-700 uppercase tracking-widest">
-                                  {alert.alertType} exceeded {alert.thresholdPercent}% capacity
+                                  {alert.alertType === AlertType.Allocation ? 'Allowance' : alert.alertType} dropped to {alert.thresholdPercent}% or below
                               </p>
                               <button 
                                   onClick={() => handleAcknowledgeAlert(alert.id)}
@@ -830,12 +841,16 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                         let triggered = false;
                                         if ((alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) && acc) {
                                             const accStats = calculateAccountStats(acc);
-                                            const pct = accStats.total > 0 ? (accStats.used / accStats.total) * 100 : 0;
-                                            if (pct >= alert.thresholdPercent) triggered = true;
+                                            if (accStats.total > 0) {
+                                                const remainingPct = (accStats.remaining / accStats.total) * 100;
+                                                if (remainingPct <= alert.thresholdPercent) triggered = true;
+                                            }
                                         }
                                         if (alert.alertType === AlertType.Allocation || alert.alertType === AlertType.Both) {
-                                            const pct = stats.total > 0 ? (stats.used / stats.total) * 100 : 0;
-                                            if (pct >= alert.thresholdPercent) triggered = true;
+                                            if (stats.total > 0) {
+                                                const remainingPct = (stats.remaining / stats.total) * 100;
+                                                if (remainingPct <= alert.thresholdPercent) triggered = true;
+                                            }
                                         }
                                         if (triggered) isFlashing = true;
                                     });
