@@ -46,6 +46,13 @@ async function initSchema(client) {
             headgate_id VARCHAR(255), 
             tap_number VARCHAR(50),
             account_number VARCHAR(255)
+        )`,
+        `CREATE TABLE IF NOT EXISTS account_alerts (
+            id VARCHAR(255) PRIMARY KEY,
+            account_number VARCHAR(255),
+            alert_type VARCHAR(50),
+            threshold_percent NUMERIC,
+            is_acknowledged BOOLEAN DEFAULT FALSE
         )`
     ];
 
@@ -125,6 +132,46 @@ exports.handler = async (e) => {
                 [body.accountNumber, body.ownerName, body.totalAllotment]);
                 return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
             }
+        }
+
+        // --- ALERTS ---
+        if (path === '/alerts') {
+            if (method === 'GET') {
+                const r = await client.query(`SELECT * FROM account_alerts`);
+                return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
+            }
+            if (method === 'POST') {
+                const alerts = Array.isArray(body) ? body : [body];
+                await client.query('BEGIN');
+                try {
+                    for (const alert of alerts) {
+                        const id = alert.id || 'ALT-' + Math.random().toString(36).substr(2, 5).toUpperCase();
+                        await client.query(
+                            `INSERT INTO account_alerts (id, account_number, alert_type, threshold_percent, is_acknowledged) 
+                             VALUES ($1, $2, $3, $4, false) 
+                             ON CONFLICT (id) DO UPDATE SET alert_type = EXCLUDED.alert_type, threshold_percent = EXCLUDED.threshold_percent, is_acknowledged = false`,
+                            [id, alert.accountNumber, alert.alertType, alert.thresholdPercent]
+                        );
+                    }
+                    await client.query('COMMIT');
+                    return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
+                } catch (err) {
+                    await client.query('ROLLBACK');
+                    throw err;
+                }
+            }
+        }
+
+        if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
+            const alertId = path.split('/').pop();
+            await client.query(`UPDATE account_alerts SET is_acknowledged = COALESCE($1, is_acknowledged) WHERE id = $2`, [body.isAcknowledledged, alertId]);
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
+        }
+
+        if (path.match(/^\/alerts\/[^/]+$/) && method === 'DELETE') {
+            const alertId = path.split('/').pop();
+            await client.query(`DELETE FROM account_alerts WHERE id = $1`, [alertId]);
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
         // --- FIELDS ---
@@ -231,7 +278,7 @@ exports.handler = async (e) => {
 
         // --- ADMIN ---
         if (path === '/admin/reset-db' && method === 'POST') {
-            await client.query(`DROP TABLE IF EXISTS field_headgates, water_orders, headgates, laterals, fields, accounts CASCADE`);
+            await client.query(`DROP TABLE IF EXISTS account_alerts, field_headgates, water_orders, headgates, laterals, fields, accounts CASCADE`);
             schemaDone = false; 
             await initSchema(client);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({msg: "Reset Complete"}) };

@@ -1,5 +1,4 @@
-
-import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount } from '../types';
+import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount, AccountAlert } from '../types';
 
 const getBaseUrl = () => {
   let url = (window as any).APP_CONFIG?.API_BASE_URL || 'https://ybbaesm77d2si3m2m4liavhu6i0txdkt.lambda-url.us-west-1.on.aws/v1';
@@ -14,7 +13,7 @@ const NUMERIC_FIELDS = [
   'acres', 'totalWaterAllocation', 'waterUsed', 'waterAllotment', 
   'allotmentUsed', 'lat', 'lng', 'requestedAmount', 'requestedInches',
   'amountAvailable', 'allocationForField', 'usageForField', 'currentRunningInches',
-  'totalAllotment'
+  'totalAllotment', 'thresholdPercent'
 ];
 
 const normalizeData = (data: any): any => {
@@ -85,3 +84,9 @@ export const getWaterBank = (): Promise<WaterBankEntry[]> => apiFetch('/water-ba
 export const getWaterAccounts = (): Promise<WaterAccount[]> => apiFetch('/accounts').catch(() => []);
 export const createWaterAccount = (data: Partial<WaterAccount>): Promise<any> => apiFetch('/accounts', { method: 'POST', body: JSON.stringify(data) });
 export const resetDatabase = (): Promise<any> => apiFetch('/admin/reset-db', { method: 'POST' });
+
+// --- Alert Services ---
+export const getAlerts = (): Promise<AccountAlert[]> => apiFetch('/alerts').catch(() => []);
+export const createAlerts = (data: Partial<AccountAlert>[]): Promise<any> => apiFetch('/alerts', { method: 'POST', body: JSON.stringify(data) });
+export const updateAlert = (id: string, data: Partial<AccountAlert>): Promise<any> => apiFetch(`/alerts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteAlert = (id: string): Promise<any> => apiFetch(`/alerts/${id}`, { method: 'DELETE' });
