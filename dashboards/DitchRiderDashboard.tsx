@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { User, WaterOrder, WaterOrderStatus, WaterOrderType, Field, Lateral } from '../types';
 import { QrCodeIcon, ClockIcon, WaterDropIcon, AdjustmentsIcon, XCircleIcon, CheckCircleIcon } from '../components/icons';
@@ -12,10 +13,6 @@ interface DitchRiderDashboardProps {
 }
 
 const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders }) => {
-  // DEFENSIVE CHECKS: Protect against backend returning objects instead of arrays
-  const safeOrders = Array.isArray(waterOrders) ? waterOrders : [];
-  const safeFields = Array.isArray(fields) ? fields : [];
-
   const [isScanning, setIsScanning] = useState(false);
   const [scanTargetOrder, setScanTargetOrder] = useState<WaterOrder | null>(null);
   
@@ -41,7 +38,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
     const fetchSystemInfo = async () => {
         try {
             const dbLaterals = await getLaterals() || [];
-            setAllSystemLaterals(Array.isArray(dbLaterals) ? dbLaterals : []);
+            setAllSystemLaterals(dbLaterals);
         } catch (e) { console.error(e); }
     };
     fetchSystemInfo();
@@ -69,7 +66,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
     });
 
     // Add inferred from fields (for legacy/direct-type support)
-    safeFields.forEach(f => { 
+    fields.forEach(f => { 
         add(f.lateral);
         f.headgates?.forEach(hg => {
             add(hg.lateral);
@@ -77,17 +74,17 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
         })
     });
     // Add any laterals found in active orders just in case
-    safeOrders.forEach(o => {
+    waterOrders.forEach(o => {
         add(o.lateral);
         add(o.lateralId);
     });
     
     return Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [safeFields, safeOrders, allSystemLaterals]);
+  }, [fields, waterOrders, allSystemLaterals]);
 
   // Filter Orders based on Local Assignments + Status (Approved OR InProgress)
   const relevantOrders = useMemo(() => {
-      return safeOrders.filter(order => {
+      return waterOrders.filter(order => {
           // Check Status: We want Approved (Pending Task) OR InProgress (Active Task)
           const isActionable = order.status === WaterOrderStatus.Approved || order.status === WaterOrderStatus.InProgress;
           if (!isActionable) return false;
@@ -103,7 +100,7 @@ const DitchRiderDashboard: React.FC<DitchRiderDashboardProps> = ({ user, waterOr
           const isAssigned = myLaterals.includes(orderLatId) || myLaterals.includes(orderLatName);
           return isAssigned;
       });
-  }, [safeOrders, myLaterals]);
+  }, [waterOrders, myLaterals]);
 
   // Group by Date
   const groupedOrders = useMemo(() => {

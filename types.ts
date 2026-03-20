@@ -1,3 +1,4 @@
+
 export enum UserRole {
   WaterManager = 'Water Manager',
   WaterOffice = 'Water Office',
@@ -110,18 +111,4 @@ export interface WaterBankEntry {
   fieldAssociation?: string;
   amountAvailable: number;
   lateral: string;
-}
-
-export enum AlertType {
-  Allotment = 'allotment',
-  Allocation = 'allocation',
-  Both = 'both'
-}
-
-export interface AccountAlert {
-  id: string;
-  accountNumber: string;
-  alertType: AlertType;
-  thresholdPercent: number;
-  isAcknowledged: boolean;
 }

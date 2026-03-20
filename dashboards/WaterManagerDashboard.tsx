@@ -1,8 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { 
-    User, Field, WaterOrder, WaterOrderStatus, WaterOrderType, 
-    Lateral, Headgate, WaterAccount, AccountAlert, AlertType 
-} from '../types';
+import { User, Field, WaterOrder, WaterOrderStatus, WaterOrderType, Lateral, Headgate, WaterAccount } from '../types';
 import DashboardCard from '../components/DashboardCard';
 import WaterOrderList from '../components/WaterOrderList';
 import SeasonStatistics from '../components/SeasonStatistics';
@@ -19,8 +17,7 @@ import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
 import { 
     createWaterOrder, updateWaterOrder, resetDatabase, 
     getLaterals, getHeadgates, createField, deleteField, 
-    getWaterAccounts, createWaterAccount,
-    getAlerts, createAlerts, updateAlert, deleteAlert
+    getWaterAccounts, createWaterAccount 
 } from '../services/api';
 
 interface WaterManagerDashboardProps {
@@ -32,16 +29,9 @@ interface WaterManagerDashboardProps {
 }
 
 type ViewMode = 'standard' | 'feed' | 'admin' | 'accounts';
-type AdminTab = 'registry' | 'alerts';
 
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders, refreshFields }) => {
-  // DEFENSIVE PROGRAMMING: Ensure these are ALWAYS arrays, even if the backend returns an object/error
-  const safeFields = Array.isArray(fields) ? fields : [];
-  const safeOrders = Array.isArray(waterOrders) ? waterOrders : [];
-
   const [viewMode, setViewMode] = useState<ViewMode>('standard');
-  const [adminTab, setAdminTab] = useState<AdminTab>('registry');
-  
   const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
   const [selectedFieldDetails, setSelectedFieldDetails] = useState<Field | null>(null);
   const [alertField, setAlertField] = useState<Field | null>(null);
@@ -53,12 +43,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [accounts, setAccounts] = useState<WaterAccount[]>([]);
-  const [alerts, setAlerts] = useState<AccountAlert[]>([]);
-  const [unacknowledgedAlerts, setUnacknowledgedAlerts] = useState<AccountAlert[]>([]);
-
-  // Safety wrappers for internal states
-  const safeAccounts = Array.isArray(accounts) ? accounts : [];
-  const safeAlerts = Array.isArray(alerts) ? alerts : [];
 
   // Field Registry States
   const [newFieldId, setNewFieldId] = useState('');
@@ -74,8 +58,12 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newLatCoord, setNewLatCoord] = useState('');
   const [newLngCoord, setNewLngCoord] = useState('');
   const [newPrimaryAccount, setNewPrimaryAccount] = useState('');
+  
+  // New "Direct Typed" Infrastructure States
   const [newTypedLateral, setNewTypedLateral] = useState('');
   const [newTypedHeadgate, setNewTypedHeadgate] = useState('');
+
+  // Editing State
   const [isEditingField, setIsEditingField] = useState(false);
 
   // Account Registry States
@@ -83,66 +71,68 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newAccOwner, setNewAccOwner] = useState('');
   const [newAccAllotment, setNewAccAllotment] = useState('');
 
-  // Alerts Form States
-  const [alertAccount, setAlertAccount] = useState<string>(''); 
-  const [alertType, setAlertType] = useState<AlertType>(AlertType.Both);
-  const [alertThreshold, setAlertThreshold] = useState<number>(10);
-  const [showAllThresholds, setShowAllThresholds] = useState(false);
-
+  // Timer for real-time updates
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
+    // Fetch accounts whenever viewing admin or accounts, or for modal population
     fetchAccounts();
-    fetchAlertsData();
-  }, [viewMode]);
-
-  useEffect(() => {
-    if (viewMode === 'admin') fetchAdminData();
   }, [viewMode]);
 
   const fetchAccounts = async () => {
       try {
           const accs = await getWaterAccounts();
-          setAccounts(accs || []);
+          setAccounts(accs);
       } catch(e) { console.error(e); }
   };
 
-  const fetchAlertsData = async () => {
-      try {
-          const a = await getAlerts();
-          setAlerts(a || []);
-      } catch(e) { console.error(e); }
-  };
+  useEffect(() => {
+    if (viewMode === 'admin') fetchAdminData();
+  }, [viewMode]);
 
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
-      await Promise.all([getLaterals(), getHeadgates(), fetchAlertsData()]);
+      await Promise.all([getLaterals(), getHeadgates()]);
     } catch (e) { console.error(e); } finally { setIsLoadingAdmin(false); }
   };
 
+  useEffect(() => {
+    const checkForAlerts = () => {
+        const fieldWithAlert = fields.find(f => {
+            const activeAccount = f.accounts?.find(a => a.isActive);
+            if (activeAccount?.allocationForField && activeAccount.usageForField) {
+                 const percent = (Number(activeAccount.usageForField) / Number(activeAccount.allocationForField));
+                 return percent >= 0.75 && percent < 1.0 && !f.accounts.some(a => a.isQueued);
+            }
+            return false; 
+        });
+        if (fieldWithAlert) setAlertField(fieldWithAlert);
+    };
+    const timer = setTimeout(checkForAlerts, 1000);
+    return () => clearTimeout(timer);
+  }, [fields]);
+
   // Helper to Calculate Real-Time Usage per Field
   const calculateFieldStats = (field: Field) => {
-    const fieldOrders = safeOrders.filter(o => o.fieldId === field.id);
+    const fieldOrders = waterOrders.filter(o => o.fieldId === field.id);
     const calculatedTotalUsage = fieldOrders.reduce((sum, order) => {
         const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
         let duration = 0;
         
-        if (order.deliveryStartDate) {
-            const start = new Date(order.deliveryStartDate);
-            if (!isNaN(start.getTime())) {
-                if (order.status === WaterOrderStatus.InProgress) {
-                    duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-                } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
-                    const end = new Date(order.deliveryEndDate);
-                    if (!isNaN(end.getTime())) {
-                        duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                    }
-                }
-            }
+        const startParts = order.deliveryStartDate.split('-');
+        const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+
+        if (order.status === WaterOrderStatus.InProgress) {
+            duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
+            const endParts = order.deliveryEndDate.split('-');
+            const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
+            // Use inclusive date logic (+1 day) for completed orders to ensure usage isn't zeroed out
+            duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         }
         return sum + (duration * rate);
     }, 0);
@@ -156,23 +146,21 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   // Helper to Calculate Real-Time Usage per ACCOUNT
   const calculateAccountStats = (account: WaterAccount) => {
-      const accountOrders = safeOrders.filter(o => o.accountNumber === account.accountNumber);
+      // Find orders tagged with this account number
+      const accountOrders = waterOrders.filter(o => o.accountNumber === account.accountNumber);
+      
       const usage = accountOrders.reduce((sum, order) => {
         const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
         let duration = 0;
-        
-        if (order.deliveryStartDate) {
-            const start = new Date(order.deliveryStartDate);
-            if (!isNaN(start.getTime())) {
-                if (order.status === WaterOrderStatus.InProgress) {
-                     duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-                } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
-                     const end = new Date(order.deliveryEndDate);
-                     if (!isNaN(end.getTime())) {
-                         duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                     }
-                }
-            }
+        const startParts = order.deliveryStartDate.split('-');
+        const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+
+        if (order.status === WaterOrderStatus.InProgress) {
+             duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
+             const endParts = order.deliveryEndDate.split('-');
+             const end = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]));
+             duration = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         }
         return sum + (duration * rate);
       }, 0);
@@ -181,62 +169,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       return { used: usage, total, remaining: Math.max(0, total - usage) };
   };
 
-  // Global Alert Acknowledgement Trigger
-  useEffect(() => {
-    const triggered: AccountAlert[] = [];
-    safeAlerts.forEach(alert => {
-        if (alert.isAcknowledged) return;
-        
-        const acc = safeAccounts.find(a => a.accountNumber === alert.accountNumber);
-        if (!acc) return;
-        
-        const linkedFields = safeFields.filter(f => f.primaryAccountNumber === alert.accountNumber);
-        let isTriggered = false;
-        
-        if (alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) {
-            const stats = calculateAccountStats(acc);
-            if (stats.total > 0) {
-                const remainingPct = (stats.remaining / stats.total) * 100;
-                if (remainingPct <= alert.thresholdPercent) isTriggered = true;
-            }
-        }
-        if (alert.alertType === AlertType.Allocation || alert.alertType === AlertType.Both) {
-            linkedFields.forEach(f => {
-                const fStats = calculateFieldStats(f);
-                if (fStats.total > 0) {
-                    const remainingPct = (fStats.remaining / fStats.total) * 100;
-                    if (remainingPct <= alert.thresholdPercent) isTriggered = true;
-                }
-            });
-        }
-
-        if (isTriggered) {
-            triggered.push(alert);
-        }
-    });
-    
-    const currentIds = unacknowledgedAlerts.map(a => a.id).sort().join(',');
-    const newIds = triggered.map(a => a.id).sort().join(',');
-    
-    if (currentIds !== newIds) {
-        setUnacknowledgedAlerts(triggered);
-    }
-  }, [alerts, accounts, fields, waterOrders, now]);
-
-  const handleAcknowledgeAlert = async (alertId: string) => {
-      try {
-          await updateAlert(alertId, { isAcknowledged: true });
-          await fetchAlertsData();
-      } catch (e: any) { alert("Failed to acknowledge: " + e.message); }
-  };
-
   // Aggregated Stats
-  const totalWaterUsed = safeFields.reduce((sum, field) => sum + calculateFieldStats(field).used, 0);
-  const totalAllocation = safeFields.reduce((sum, field) => sum + (Number(field.totalWaterAllocation) || 0), 0);
+  const totalWaterUsed = fields.reduce((sum, field) => sum + calculateFieldStats(field).used, 0);
+  const totalAllocation = fields.reduce((sum, field) => sum + (Number(field.totalWaterAllocation) || 0), 0);
   const allocationUsedPercent = totalAllocation > 0 ? ((totalWaterUsed / totalAllocation) * 100).toFixed(1) : "0";
 
-  const awaitingApprovalOrders = safeOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
-  const myRecentOrders = safeOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
+  const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
+  const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
 
   const handleResetDb = async () => {
     if (window.confirm("Are you sure you want to reset the entire database? This cannot be undone.")) {
@@ -245,7 +184,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         await refreshWaterOrders();
         await refreshFields();
         setAccounts([]);
-        setAlerts([]);
         alert("Database reset successfully.");
         window.location.reload(); 
       } catch (err: any) {
@@ -272,7 +210,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     try {
       const parsed = JSON.parse(data);
       if (parsed.fieldId) {
-        const field = safeFields.find(f => f.id === parsed.fieldId);
+        const field = fields.find(f => f.id === parsed.fieldId);
         if (field) {
           setSelectedFieldDetails(field);
           setIsScannerOpen(false);
@@ -287,14 +225,26 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     }
   };
 
+  // Populate form with field data for editing
   const handleEditField = (field: Field) => {
-    setNewFieldId(field.id); setNewFieldName(field.name); setNewCompName(field.companyName || '');
-    setNewAddr(field.address || ''); setNewPhone(field.phone || ''); setNewFieldCrop(field.crop);
-    setNewFieldAcres(field.acres.toString()); setNewFieldOwner(field.owner || ''); setNewFieldAlloc(field.totalWaterAllocation.toString());
-    setNewFieldAllotment(field.waterAllotment?.toString() || ''); setNewLatCoord(field.lat?.toString() || ''); setNewLngCoord(field.lng?.toString() || '');
-    setNewTypedLateral(field.lateral || ''); setNewTypedHeadgate(field.tapNumber || ''); setNewPrimaryAccount(field.primaryAccountNumber || '');
+    setNewFieldId(field.id);
+    setNewFieldName(field.name);
+    setNewCompName(field.companyName || '');
+    setNewAddr(field.address || '');
+    setNewPhone(field.phone || '');
+    setNewFieldCrop(field.crop);
+    setNewFieldAcres(field.acres.toString());
+    setNewFieldOwner(field.owner || '');
+    setNewFieldAlloc(field.totalWaterAllocation.toString());
+    setNewFieldAllotment(field.waterAllotment?.toString() || '');
+    setNewLatCoord(field.lat?.toString() || '');
+    setNewLngCoord(field.lng?.toString() || '');
+    setNewTypedLateral(field.lateral || '');
+    setNewTypedHeadgate(field.tapNumber || '');
+    setNewPrimaryAccount(field.primaryAccountNumber || '');
+    
     setIsEditingField(true);
-    setAdminTab('registry'); // Ensure we are on registry tab if clicking from outside
+    // Scroll to top to see the form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -312,11 +262,24 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     if (!newFieldId || !newFieldName) return alert("Field ID and Name required.");
     try {
         await createField({ 
-            id: newFieldId, name: newFieldName, companyName: newCompName, address: newAddr, phone: newPhone, crop: newFieldCrop, 
-            acres: parseFloat(newFieldAcres) || 0, totalWaterAllocation: parseFloat(newFieldAlloc) || 0, waterAllotment: parseFloat(newFieldAllotment) || 0,
-            lat: parseFloat(newLatCoord), lng: parseFloat(newLngCoord), owner: newFieldOwner, lateral: newTypedLateral, tapNumber: newTypedHeadgate,
-            headgateIds: newTypedHeadgate ? [newTypedHeadgate] : [], primaryAccountNumber: newPrimaryAccount
+            id: newFieldId, 
+            name: newFieldName, 
+            companyName: newCompName, 
+            address: newAddr, 
+            phone: newPhone, 
+            crop: newFieldCrop, 
+            acres: parseFloat(newFieldAcres) || 0,
+            totalWaterAllocation: parseFloat(newFieldAlloc) || 0,
+            waterAllotment: parseFloat(newFieldAllotment) || 0,
+            lat: parseFloat(newLatCoord),
+            lng: parseFloat(newLngCoord),
+            owner: newFieldOwner,
+            lateral: newTypedLateral,
+            tapNumber: newTypedHeadgate,
+            headgateIds: newTypedHeadgate ? [newTypedHeadgate] : [],
+            primaryAccountNumber: newPrimaryAccount
         });
+        
         handleClearForm();
         await refreshFields(); 
         alert(isEditingField ? "Field Profile Updated." : "Field Registry profile created.");
@@ -327,59 +290,52 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       e.preventDefault();
       if (!newAccNumber || !newAccOwner) return alert("Account Number and Owner required");
       try {
-          await createWaterAccount({ accountNumber: newAccNumber, ownerName: newAccOwner, totalAllotment: parseFloat(newAccAllotment) || 0 });
+          await createWaterAccount({
+              accountNumber: newAccNumber,
+              ownerName: newAccOwner,
+              totalAllotment: parseFloat(newAccAllotment) || 0
+          });
           setNewAccNumber(''); setNewAccOwner(''); setNewAccAllotment('');
           await fetchAccounts();
           alert("Account Created.");
       } catch (e: any) { alert(e.message); }
   };
 
-  const handleCreateAlert = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!alertAccount) return alert("Please select an account or Bulk option.");
-      try {
-          const payload: Partial<AccountAlert>[] = [];
-          if (alertAccount === 'ALL') {
-              safeAccounts.forEach(acc => {
-                  payload.push({ accountNumber: acc.accountNumber, alertType, thresholdPercent: alertThreshold });
-              });
-          } else {
-              payload.push({ accountNumber: alertAccount, alertType, thresholdPercent: alertThreshold });
-          }
-          await createAlerts(payload);
-          await fetchAlertsData();
-          alert("Alert(s) successfully created.");
-          setAlertAccount('');
-          setAlertThreshold(10);
-      } catch (e: any) { alert("Failed to create alert: " + e.message); }
-  };
-
-  const handleDeleteAlert = async (id: string) => {
-      if (window.confirm("Delete this alert?")) {
-          try {
-              await deleteAlert(id);
-              await fetchAlertsData();
-          } catch(e: any) { alert(e.message); }
-      }
-  };
-
-  const handleManualOrderCreate = async (orderData: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; deliveryEndDate?: string; accountNumber?: string; }) => {
+  const handleManualOrderCreate = async (orderData: { 
+    fieldId: string; 
+    orderType: WaterOrderType; 
+    requestedAmount: number; 
+    deliveryStartDate: string; 
+    deliveryEndDate?: string;
+    accountNumber?: string;
+  }) => {
     try {
-      const field = safeFields.find(f => f.id === orderData.fieldId);
+      const field = fields.find(f => f.id === orderData.fieldId);
       if (!field) throw new Error("Field not found in registry.");
+
       await createWaterOrder({
-        ...orderData, fieldName: field.name, requester: user.name, status: WaterOrderStatus.AwaitingApproval,
-        orderDate: new Date().toISOString().split('T')[0], lateralId: field.lateral || '', tapNumber: field.tapNumber || '',
-        headgateId: field.headgateIds?.[0] || '', accountNumber: orderData.accountNumber
+        ...orderData,
+        fieldName: field.name,
+        requester: user.name,
+        status: WaterOrderStatus.AwaitingApproval,
+        orderDate: new Date().toISOString().split('T')[0],
+        lateralId: field.lateral || '',
+        tapNumber: field.tapNumber || '',
+        headgateId: field.headgateIds?.[0] || '',
+        accountNumber: orderData.accountNumber // Pass account number to backend
       });
+
       setIsNewOrderModalOpen(false);
       await refreshWaterOrders();
       alert("Water order submitted. Awaiting verification.");
-    } catch (err: any) { alert("Failed to create order: " + (err.message || "Unknown error")); }
+    } catch (err: any) {
+      alert("Failed to create order: " + (err.message || "Unknown error"));
+    }
   };
 
   const renderAccountsView = () => (
       <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
+          {/* Add Account Form */}
            <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden">
                 <div className="bg-emerald-900 p-8 text-white">
                     <h3 className="text-2xl font-black uppercase tracking-tight">Water Bank Ledger</h3>
@@ -406,8 +362,9 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 </div>
            </div>
 
+           {/* Accounts List */}
            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-               {safeAccounts.map(acc => {
+               {accounts.map(acc => {
                    const stats = calculateAccountStats(acc);
                    return (
                        <div key={acc.accountNumber} className="bg-white p-8 rounded-3xl shadow-lg border border-gray-100 relative overflow-hidden group">
@@ -438,198 +395,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       </div>
   );
 
-  const renderAlertsView = () => {
-      const thresholds = showAllThresholds 
-          ? Array.from({length: 21}, (_, i) => i * 5)
-          : Array.from({length: 7}, (_, i) => i * 5);
-
-      return (
-          <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-               <div className="bg-white rounded-[2rem] shadow-2xl border border-rose-100 overflow-hidden">
-                    <div className="bg-rose-600 p-8 text-white">
-                        <h3 className="text-2xl font-black uppercase tracking-tight">System Alerts Configuration</h3>
-                        <p className="text-rose-200 font-bold text-sm">Monitor Allowance and Allotment Usage Thresholds</p>
-                    </div>
-                    
-                    <div className="p-8">
-                         <form onSubmit={handleCreateAlert} className="space-y-6 bg-rose-50/50 p-8 rounded-[2.5rem] border border-rose-100 shadow-sm">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Target Account</label>
-                                    <select value={alertAccount} onChange={e => setAlertAccount(e.target.value)} className="w-full px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
-                                        <option value="" disabled>Select an account...</option>
-                                        <option value="ALL" className="font-black text-rose-600">⚡ Bulk Set All Accounts ⚡</option>
-                                        {safeAccounts.map(acc => (
-                                            <option key={acc.accountNumber} value={acc.accountNumber}>{acc.accountNumber} - {acc.ownerName}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Alert Trigger Focus</label>
-                                    <select value={alertType} onChange={e => setAlertType(e.target.value as AlertType)} className="w-full px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
-                                        <option value={AlertType.Allotment}>Allotment Only</option>
-                                        <option value={AlertType.Allocation}>Allowance Only</option>
-                                        <option value={AlertType.Both}>Alert on Both</option>
-                                    </select>
-                                </div>
-                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Threshold Percentage (%)</label>
-                                    <div className="flex gap-2">
-                                        <select value={alertThreshold} onChange={e => setAlertThreshold(Number(e.target.value))} className="flex-1 px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
-                                            {thresholds.map(t => (
-                                                <option key={t} value={t}>{t}% Remaining</option>
-                                            ))}
-                                        </select>
-                                        {!showAllThresholds && (
-                                            <button type="button" onClick={() => setShowAllThresholds(true)} className="px-4 py-3 bg-rose-100 text-rose-700 rounded-xl font-black text-xs hover:bg-rose-200 transition-colors whitespace-nowrap">
-                                                Show All %
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                            <button type="submit" className="w-full bg-rose-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-rose-700 shadow-xl transition-all">Register New Alert Level</button>
-                         </form>
-                    </div>
-               </div>
-
-               <div className="bg-white p-8 rounded-[2rem] shadow-xl border border-gray-100">
-                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6">Active Threshold Monitors</h3>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Account Target</th>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Monitor Type</th>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Trigger Level</th>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-100">
-                                {safeAlerts.length === 0 ? (
-                                    <tr><td colSpan={5} className="px-6 py-8 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">No alerts registered</td></tr>
-                                ) : safeAlerts.map(alert => (
-                                    <tr key={alert.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{alert.accountNumber}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold uppercase text-gray-600">
-                                            {alert.alertType === AlertType.Allocation ? 'Allowance' : alert.alertType}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap font-black text-rose-600">{alert.thresholdPercent}% Remaining</td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            {alert.isAcknowledged ? 
-                                                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-black uppercase">Acknowledged</span> : 
-                                                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase animate-pulse">Monitoring</span>
-                                            }
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <button onClick={() => handleDeleteAlert(alert.id)} className="text-red-500 hover:text-red-700 font-bold uppercase text-[10px] flex items-center gap-1">
-                                                <TrashIcon className="h-4 w-4" /> Remove
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-               </div>
-          </div>
-      );
-  };
-
-  const renderRegistryView = () => (
-      <div className="space-y-8 animate-in slide-in-from-left-4 duration-300">
-        <form onSubmit={handleAddField} className={`space-y-8 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingField ? 'bg-orange-50/50 border-orange-100' : 'bg-indigo-50/50 border-indigo-100'}`}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Field ID</label>
-                    <input value={newFieldId} onChange={e => setNewFieldId(e.target.value)} placeholder="F-001" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500 bg-white' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Display Name</label>
-                    <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. SOUTH 40" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Company Name</label>
-                    <input value={newCompName} onChange={e => setNewCompName(e.target.value)} placeholder="Farming Co." className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Phone</label>
-                    <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="555-0101" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Address</label>
-                    <input value={newAddr} onChange={e => setNewAddr(e.target.value)} placeholder="123 Field Lane" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Crop Type</label>
-                        <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Corn" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Acres</label>
-                        <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="100" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner Name</label>
-                    <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="John Doe" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Season AF (Legacy)</label>
-                    <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="400" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Allotment AF (Legacy)</label>
-                    <input type="number" value={newFieldAllotment} onChange={e => setNewFieldAllotment(e.target.value)} placeholder="250" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lat</label>
-                        <input value={newLatCoord} onChange={e => setNewLatCoord(e.target.value)} placeholder="43.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lng</label>
-                        <input value={newLngCoord} onChange={e => setNewLngCoord(e.target.value)} placeholder="-116.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                    </div>
-                </div>
-            </div>
-
-            <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t ${isEditingField ? 'border-orange-200' : 'border-indigo-100'}`}>
-                <div className="space-y-1">
-                    <label className={`text-[10px] font-black uppercase ml-1 tracking-widest ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>Primary Lateral Name (Direct Type)</label>
-                    <input value={newTypedLateral} onChange={e => setNewTypedLateral(e.target.value)} placeholder="e.g. Lateral 8.13" className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="space-y-1">
-                    <label className={`text-[10px] font-black uppercase ml-1 tracking-widest ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>Primary Headgate / Tap ID (Direct Type)</label>
-                    <input value={newTypedHeadgate} onChange={e => setNewTypedHeadgate(e.target.value)} placeholder="e.g. HG-A" className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} />
-                </div>
-                 <div className="space-y-1 col-span-1 md:col-span-2 mt-4">
-                    <label className="text-[10px] font-black text-emerald-600 uppercase ml-1 tracking-widest">Primary Account Number (Billing)</label>
-                    <input value={newPrimaryAccount} onChange={e => setNewPrimaryAccount(e.target.value)} placeholder="e.g. ACCT-12345" className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl font-black text-emerald-900 focus:ring-2 focus:ring-emerald-500 outline-none bg-white" />
-                </div>
-            </div>
-
-            <div className="flex gap-4">
-                {isEditingField && (
-                    <button type="button" onClick={handleClearForm} className="flex-1 bg-gray-200 text-gray-700 py-4 rounded-xl font-black uppercase text-sm hover:bg-gray-300 shadow-xl transition-all">
-                        Cancel Edit
-                    </button>
-                )}
-                <button type="submit" className={`flex-1 text-white py-4 rounded-xl font-black uppercase text-sm shadow-xl transition-all ${isEditingField ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                    {isEditingField ? "Update Field Profile" : "Register Field Profile"}
-                </button>
-            </div>
-        </form>
-      </div>
-  );
-
   const renderAdminView = () => (
     <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
         <div className={`bg-white rounded-[2rem] shadow-2xl border transition-all overflow-hidden ${isEditingField ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
@@ -639,7 +404,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         {isEditingField ? 'Update Field Profile' : 'Infrastructure Command Center'}
                     </h3>
                     <p className={`font-bold text-sm ${isEditingField ? 'text-orange-200' : 'text-gray-400'}`}>
-                        {isEditingField ? 'Editing Existing Field Data' : 'Manage Field Registries and System Alerts'}
+                        {isEditingField ? 'Editing Existing Field Data' : 'Register Fields and Direct-Type Asset Mapping'}
                     </p>
                 </div>
                 {isLoadingAdmin && <RefreshIcon className="h-6 w-6 animate-spin text-blue-400" />}
@@ -650,144 +415,160 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 )}
             </div>
 
-            <div className="bg-gray-50 border-b border-gray-200 px-8 flex gap-4">
-                <button 
-                    onClick={() => setAdminTab('registry')}
-                    className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'registry' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                >
-                    Unified Field Profile Registry
-                </button>
-                <button 
-                    onClick={() => setAdminTab('alerts')}
-                    className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'alerts' ? 'border-rose-600 text-rose-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                >
-                    Account Alerts
-                </button>
-            </div>
+            <div className="p-8 space-y-12">
+                <div className="space-y-6">
+                    <div className={`flex items-center space-x-3 ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>
+                        <ViewGridIcon className="h-6 w-6" />
+                        <h4 className="text-lg font-black uppercase tracking-widest">
+                            {isEditingField ? `Editing: ${newFieldName || newFieldId}` : 'Unified Field Profile Registry'}
+                        </h4>
+                    </div>
+                    
+                    <form onSubmit={handleAddField} className={`space-y-8 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingField ? 'bg-orange-50/50 border-orange-100' : 'bg-indigo-50/50 border-indigo-100'}`}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Field ID</label>
+                                <input 
+                                    value={newFieldId} 
+                                    onChange={e => setNewFieldId(e.target.value)} 
+                                    placeholder="F-001" 
+                                    // Lock ID editing slightly to prevent accidental dupes, but allow if user really intends to "Clone" or "Rename" logic (Backend uses upsert)
+                                    // For now, we allow editing, but visually indicate it's the key.
+                                    className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500 bg-white' : 'border-gray-200 focus:ring-indigo-500'}`} 
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Display Name</label>
+                                <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. SOUTH 40" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Company Name</label>
+                                <input value={newCompName} onChange={e => setNewCompName(e.target.value)} placeholder="Farming Co." className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Phone</label>
+                                <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="555-0101" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Address</label>
+                                <input value={newAddr} onChange={e => setNewAddr(e.target.value)} placeholder="123 Field Lane" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Crop Type</label>
+                                    <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Corn" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Acres</label>
+                                    <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="100" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                                </div>
+                            </div>
+                        </div>
 
-            <div className="p-8">
-                {adminTab === 'registry' ? renderRegistryView() : renderAlertsView()}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner Name</label>
+                                <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="John Doe" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Season AF (Legacy)</label>
+                                <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="400" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Allotment AF (Legacy)</label>
+                                <input type="number" value={newFieldAllotment} onChange={e => setNewFieldAllotment(e.target.value)} placeholder="250" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lat</label>
+                                    <input value={newLatCoord} onChange={e => setNewLatCoord(e.target.value)} placeholder="43.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lng</label>
+                                    <input value={newLngCoord} onChange={e => setNewLngCoord(e.target.value)} placeholder="-116.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t ${isEditingField ? 'border-orange-200' : 'border-indigo-100'}`}>
+                            <div className="space-y-1">
+                                <label className={`text-[10px] font-black uppercase ml-1 tracking-widest ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>Primary Lateral Name (Direct Type)</label>
+                                <input value={newTypedLateral} onChange={e => setNewTypedLateral(e.target.value)} placeholder="e.g. Lateral 8.13" className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} />
+                                <p className="text-[9px] font-bold text-gray-400 ml-1 uppercase">Enter the Rider Channel or Lateral ID</p>
+                            </div>
+                            <div className="space-y-1">
+                                <label className={`text-[10px] font-black uppercase ml-1 tracking-widest ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>Primary Headgate / Tap ID (Direct Type)</label>
+                                <input value={newTypedHeadgate} onChange={e => setNewTypedHeadgate(e.target.value)} placeholder="e.g. HG-A" className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} />
+                                <p className="text-[9px] font-bold text-gray-400 ml-1 uppercase">Enter the main tap point ID</p>
+                            </div>
+                            {/* New Account Input */}
+                             <div className="space-y-1 col-span-1 md:col-span-2 mt-4">
+                                <label className="text-[10px] font-black text-emerald-600 uppercase ml-1 tracking-widest">Primary Account Number (Billing)</label>
+                                <input value={newPrimaryAccount} onChange={e => setNewPrimaryAccount(e.target.value)} placeholder="e.g. ACCT-12345" className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl font-black text-emerald-900 focus:ring-2 focus:ring-emerald-500 outline-none bg-white" />
+                                <p className="text-[9px] font-bold text-gray-400 ml-1 uppercase">The bank account that holds the water allotment</p>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4">
+                            {isEditingField && (
+                                <button type="button" onClick={handleClearForm} className="flex-1 bg-gray-200 text-gray-700 py-4 rounded-xl font-black uppercase text-sm hover:bg-gray-300 shadow-xl transition-all">
+                                    Cancel Edit
+                                </button>
+                            )}
+                            <button type="submit" className={`flex-1 text-white py-4 rounded-xl font-black uppercase text-sm shadow-xl transition-all ${isEditingField ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                                {isEditingField ? "Update Field Profile" : "Register Field Profile"}
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {safeFields.map(f => {
-                const linkedAlerts = safeAlerts.filter(a => a.accountNumber === f.primaryAccountNumber);
-                let isFlashing = false;
-                
-                const fOrders = safeOrders.filter(o => o.fieldId === f.id);
-                const isRunning = fOrders.some(o => o.status === WaterOrderStatus.InProgress);
-
-                if (f.primaryAccountNumber) {
-                    const acc = safeAccounts.find(a => a.accountNumber === f.primaryAccountNumber);
-                    linkedAlerts.forEach(alert => {
-                        let triggered = false;
-                        if ((alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) && acc) {
-                            const accStats = calculateAccountStats(acc);
-                            if (accStats.total > 0) {
-                                const remainingPct = (accStats.remaining / accStats.total) * 100;
-                                if (remainingPct <= alert.thresholdPercent) triggered = true;
-                            }
-                        }
-                        if (alert.alertType === AlertType.Allocation || alert.alertType === AlertType.Both) {
-                            const fStats = calculateFieldStats(f);
-                            if (fStats.total > 0) {
-                                const remainingPct = (fStats.remaining / fStats.total) * 100;
-                                if (remainingPct <= alert.thresholdPercent) triggered = true;
-                            }
-                        }
-                        if (triggered) isFlashing = true;
-                    });
-                }
-                
-                let flashingClass = "";
-                if (isFlashing) {
-                    flashingClass = isRunning ? "animate-flash-blue" : "animate-flash-red";
-                }
-
-                return (
-                    <div 
-                        key={f.id} 
-                        onClick={() => handleEditField(f)} 
-                        className={`bg-white p-6 rounded-3xl shadow-lg border cursor-pointer group relative transition-all hover:-translate-y-1 ${isEditingField && newFieldId === f.id ? 'border-orange-400 ring-2 ring-orange-200 shadow-orange-100' : 'border-gray-100'} ${flashingClass}`}
+            {fields.map(f => (
+                <div 
+                    key={f.id} 
+                    onClick={() => handleEditField(f)} 
+                    className={`bg-white p-6 rounded-3xl shadow-lg border cursor-pointer group relative transition-all hover:-translate-y-1 ${isEditingField && newFieldId === f.id ? 'border-orange-400 ring-2 ring-orange-200 shadow-orange-100' : 'border-gray-100 hover:border-indigo-200'}`}
+                >
+                    <button 
+                        onClick={(e) => handleDeleteSingleField(e, f.id, f.name)}
+                        className="absolute top-4 right-4 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 z-10"
+                        title="Delete Field Registry"
                     >
-                        <button 
-                            onClick={(e) => handleDeleteSingleField(e, f.id, f.name)}
-                            className="absolute top-4 right-4 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 z-10"
-                            title="Delete Field Registry"
-                        >
-                            <TrashIcon className="h-4 w-4" />
-                        </button>
-                        <div className="flex justify-between items-start mb-2 pr-8">
-                            <p className={`font-black text-lg transition-colors ${isEditingField && newFieldId === f.id ? 'text-orange-600' : 'text-gray-900 group-hover:text-indigo-600'}`}>{f.name}</p>
-                        </div>
-                        <span className="text-[8px] font-black bg-gray-100 px-2 py-0.5 rounded uppercase">{f.id}</span>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">{f.companyName || f.owner || 'Farmer'}</p>
-                        <div className="mt-4 flex gap-2">
-                            <div className="px-2 py-1 bg-blue-50 text-[9px] font-black text-blue-600 rounded-lg uppercase">Lat: {f.lateral || 'Direct'}</div>
-                            <div className="px-2 py-1 bg-green-50 text-[9px] font-black text-green-600 rounded-lg uppercase">HG: {f.tapNumber || 'Direct'}</div>
-                        </div>
-                         <div className="mt-2">
-                             <span className="text-[9px] font-black text-emerald-600 uppercase bg-emerald-50 px-2 py-1 rounded-lg block text-center">
-                                 ACCT: {f.primaryAccountNumber || 'Unassigned'}
-                             </span>
-                         </div>
-                         {!isEditingField && (
-                             <div className="absolute inset-0 bg-indigo-900/0 group-hover:bg-indigo-900/5 rounded-3xl transition-colors flex items-center justify-center pointer-events-none">
-                                 <span className="opacity-0 group-hover:opacity-100 bg-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm text-indigo-600">Click to Edit</span>
-                             </div>
-                         )}
+                        <TrashIcon className="h-4 w-4" />
+                    </button>
+                    <div className="flex justify-between items-start mb-2 pr-8">
+                        <p className={`font-black text-lg transition-colors ${isEditingField && newFieldId === f.id ? 'text-orange-600' : 'text-gray-900 group-hover:text-indigo-600'}`}>{f.name}</p>
                     </div>
-                )
-            })}
+                    <span className="text-[8px] font-black bg-gray-100 px-2 py-0.5 rounded uppercase">{f.id}</span>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">{f.companyName || f.owner || 'Farmer'}</p>
+                    <div className="mt-4 flex gap-2">
+                        <div className="px-2 py-1 bg-blue-50 text-[9px] font-black text-blue-600 rounded-lg uppercase">Lat: {f.lateral || 'Direct'}</div>
+                        <div className="px-2 py-1 bg-green-50 text-[9px] font-black text-green-600 rounded-lg uppercase">HG: {f.tapNumber || 'Direct'}</div>
+                    </div>
+                     <div className="mt-2">
+                         <span className="text-[9px] font-black text-emerald-600 uppercase bg-emerald-50 px-2 py-1 rounded-lg block text-center">
+                             ACCT: {f.primaryAccountNumber || 'Unassigned'}
+                         </span>
+                     </div>
+                     {/* Edit Mode Indicator Overlay */}
+                     {!isEditingField && (
+                         <div className="absolute inset-0 bg-indigo-900/0 group-hover:bg-indigo-900/5 rounded-3xl transition-colors flex items-center justify-center pointer-events-none">
+                             <span className="opacity-0 group-hover:opacity-100 bg-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm text-indigo-600">Click to Edit</span>
+                         </div>
+                     )}
+                </div>
+            ))}
         </div>
     </div>
   );
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto relative">
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes flashRedWhite {
-            0%, 100% { background-color: white; border-color: #f3f4f6; }
-            50% { background-color: #fee2e2; border-color: #ef4444; }
-        }
-        @keyframes flashBlueWhite {
-            0%, 100% { background-color: white; border-color: #f3f4f6; }
-            50% { background-color: #dbeafe; border-color: #3b82f6; }
-        }
-        .animate-flash-red { animation: flashRedWhite 1.5s infinite; }
-        .animate-flash-blue { animation: flashBlueWhite 1.5s infinite; }
-      `}} />
-
-      {unacknowledgedAlerts.length > 0 && (
-          <div className="fixed inset-0 bg-red-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-              <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-xl overflow-hidden border-4 border-red-500 animate-in zoom-in-95 duration-200">
-                  <div className="bg-red-600 p-8 text-white text-center">
-                      <h2 className="text-3xl font-black uppercase tracking-tighter flex items-center justify-center gap-3">
-                          <span className="text-4xl animate-bounce">⚠️</span> THRESHOLD ALERT
-                      </h2>
-                      <p className="text-red-100 font-bold text-sm mt-2">Immediate Review Required</p>
-                  </div>
-                  <div className="p-8 space-y-4 max-h-[50vh] overflow-y-auto">
-                      {unacknowledgedAlerts.map(alert => (
-                          <div key={alert.id} className="bg-red-50 p-6 rounded-3xl border border-red-100">
-                              <h3 className="text-lg font-black text-red-900 mb-1">Account: {alert.accountNumber}</h3>
-                              <p className="text-sm font-bold text-red-700 uppercase tracking-widest">
-                                  {alert.alertType === AlertType.Allocation ? 'Allowance' : alert.alertType} dropped to {alert.thresholdPercent}% or below
-                              </p>
-                              <button 
-                                  onClick={() => handleAcknowledgeAlert(alert.id)}
-                                  className="mt-4 w-full bg-red-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-red-700 transition-colors"
-                              >
-                                  Acknowledge Alert
-                              </button>
-                          </div>
-                      ))}
-                  </div>
-              </div>
-          </div>
-      )}
-
+    <div className="space-y-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 border-b-2 border-gray-100 pb-8">
           <div>
             <div className="flex items-center gap-3 mb-2">
@@ -809,7 +590,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       </div>
       
       {viewMode === 'admin' ? renderAdminView() : viewMode === 'accounts' ? renderAccountsView() : viewMode === 'feed' ? (
-        <RemainingFeedView fields={safeFields} waterOrders={safeOrders} onFieldClick={setSelectedFieldDetails} />
+        <RemainingFeedView fields={fields} waterOrders={waterOrders} onFieldClick={setSelectedFieldDetails} />
       ) : (
         <>
             <SeasonStatistics>
@@ -835,36 +616,10 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100">
-                            {safeFields.map(field => {
+                            {fields.map(field => {
                                 const stats = calculateFieldStats(field);
-                                
-                                const linkedAlerts = safeAlerts.filter(a => a.accountNumber === field.primaryAccountNumber);
-                                let isFlashing = false;
-                                const isRunning = safeOrders.some(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
-                                if (field.primaryAccountNumber) {
-                                    const acc = safeAccounts.find(a => a.accountNumber === field.primaryAccountNumber);
-                                    linkedAlerts.forEach(alert => {
-                                        let triggered = false;
-                                        if ((alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) && acc) {
-                                            const accStats = calculateAccountStats(acc);
-                                            if (accStats.total > 0) {
-                                                const remainingPct = (accStats.remaining / accStats.total) * 100;
-                                                if (remainingPct <= alert.thresholdPercent) triggered = true;
-                                            }
-                                        }
-                                        if (alert.alertType === AlertType.Allocation || alert.alertType === AlertType.Both) {
-                                            if (stats.total > 0) {
-                                                const remainingPct = (stats.remaining / stats.total) * 100;
-                                                if (remainingPct <= alert.thresholdPercent) triggered = true;
-                                            }
-                                        }
-                                        if (triggered) isFlashing = true;
-                                    });
-                                }
-                                let flashingClass = isFlashing ? (isRunning ? "animate-flash-blue" : "animate-flash-red") : "";
-
                                 return (
-                                <tr key={field.id} className={`hover:bg-gray-50 cursor-pointer transition-colors ${flashingClass}`} onClick={() => setSelectedFieldDetails(field)}>
+                                <tr key={field.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedFieldDetails(field)}>
                                     <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{field.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{field.primaryAccountNumber || '—'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap font-black text-blue-600">{stats.remaining.toFixed(1)} / {stats.total.toFixed(1)} AF</td>
@@ -890,8 +645,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
       {alertField && <WaterUsageAlertModal field={alertField} onClose={() => setAlertField(null)} onUpdate={refreshWaterOrders} />}
       {selectedFieldForQR && <QRCodeModal field={selectedFieldForQR} onClose={() => setSelectedFieldForQR(null)} />}
-      {selectedFieldDetails && <FieldDetailsModal field={selectedFieldDetails} orders={safeOrders} onClose={() => setSelectedFieldDetails(null)} onUpdate={refreshFields} onCreateOrder={(type) => { setCreateOrderInitialFieldId(selectedFieldDetails.id); setCreateOrderType(type); setIsNewOrderModalOpen(true); }} />}
-      {isNewOrderModalOpen && <NewWaterOrderModal fields={safeFields} initialFieldId={createOrderInitialFieldId} initialOrderType={createOrderType} onClose={() => setIsNewOrderModalOpen(false)} onOrderCreate={handleManualOrderCreate} />}
+      {selectedFieldDetails && <FieldDetailsModal field={selectedFieldDetails} orders={waterOrders} onClose={() => setSelectedFieldDetails(null)} onUpdate={refreshFields} onCreateOrder={(type) => { setCreateOrderInitialFieldId(selectedFieldDetails.id); setCreateOrderType(type); setIsNewOrderModalOpen(true); }} />}
+      {isNewOrderModalOpen && <NewWaterOrderModal fields={fields} initialFieldId={createOrderInitialFieldId} initialOrderType={createOrderType} onClose={() => setIsNewOrderModalOpen(false)} onOrderCreate={handleManualOrderCreate} />}
       {isScannerOpen && <Scanner onScan={handleIrrigatorScan} onClose={() => setIsScannerOpen(false)} />}
     </div>
   );

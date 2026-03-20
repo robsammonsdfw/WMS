@@ -1,10 +1,12 @@
+
 const pg = require("pg");
-let pool = null;
+let dbClient = null;
 let schemaDone = false;
 
 async function initSchema(client) {
     if (schemaDone) return;
     
+    // Create base tables safely
     const queries = [
         `CREATE TABLE IF NOT EXISTS laterals (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS headgates (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, lateral_id VARCHAR(255) REFERENCES laterals(id), tap_number VARCHAR(50))`,
@@ -45,13 +47,6 @@ async function initSchema(client) {
             headgate_id VARCHAR(255), 
             tap_number VARCHAR(50),
             account_number VARCHAR(255)
-        )`,
-        `CREATE TABLE IF NOT EXISTS account_alerts (
-            id VARCHAR(255) PRIMARY KEY,
-            account_number VARCHAR(255),
-            alert_type VARCHAR(50),
-            threshold_percent NUMERIC,
-            is_acknowledged BOOLEAN DEFAULT FALSE
         )`
     ];
 
@@ -59,6 +54,7 @@ async function initSchema(client) {
         await client.query(q);
     }
 
+    // Migration steps - run loosely
     try {
         await client.query(`ALTER TABLE water_orders ADD COLUMN IF NOT EXISTS delivery_end_date DATE`);
         await client.query(`ALTER TABLE water_orders ADD COLUMN IF NOT EXISTS account_number VARCHAR(255)`);
@@ -72,55 +68,51 @@ async function initSchema(client) {
     schemaDone = true;
 }
 
-async function getPool() {
-    if (!pool) {
-        const { DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT } = process.env;
-        if (!DB_HOST || !DB_PASSWORD) throw new Error("DB Connection Details Missing");
-        
-        pool = new pg.Pool({ 
-            host: DB_HOST, 
-            port: DB_PORT || 5432, 
-            user: DB_USER, 
-            password: DB_PASSWORD, 
-            database: DB_NAME, 
-            ssl: { rejectUnauthorized: false }, 
-            connectionTimeoutMillis: 5000,
-            max: 5 
-        });
+async function getClient() {
+    if (dbClient) {
+        try { await dbClient.query('SELECT 1'); return dbClient; } 
+        catch (e) { dbClient = null; }
     }
-    return pool;
+    const { DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT } = process.env;
+    if (!DB_HOST || !DB_PASSWORD) throw new Error("DB Connection Details Missing");
+    
+    const client = new pg.Client({ 
+        host: DB_HOST, 
+        port: DB_PORT || 5432, 
+        user: DB_USER, 
+        password: DB_PASSWORD, 
+        database: DB_NAME, 
+        ssl: { rejectUnauthorized: false }, 
+        connectionTimeoutMillis: 5000 
+    });
+    
+    await client.connect();
+    await initSchema(client);
+    dbClient = client;
+    return client;
 }
 
 exports.handler = async (e) => {
-    // API Gateway requires CORS headers explicitly attached to EVERY response
     const resHeaders = { 
         "Access-Control-Allow-Origin": "*", 
-        "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key,Authorization", 
+        "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key", 
         "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", 
         "Content-Type": "application/json" 
     };
-
-    // Extract Method (API Gateway format)
-    const method = e.httpMethod || "GET";
-
-    if (method === 'OPTIONS') {
-        return { statusCode: 200, headers: resHeaders, body: '' };
-    }
     
-    // Extract Path (API Gateway format)
-    let path = e.path || "/";
+    if (e.httpMethod === 'OPTIONS') return { statusCode: 200, headers: resHeaders, body: '' };
+    
+    // Robust path parsing
+    let path = (e.path || "/");
     path = path.replace(/^\/(v1|prod|dev|v2)/, ""); 
     path = path.split('?')[0]; 
     path = path.replace(/\/$/, ""); 
     if (path === "") path = "/";
 
-    let client;
+    const method = e.httpMethod;
+    
     try {
-        const dbPool = await getPool();
-        client = await dbPool.connect();
-
-        await initSchema(client);
-
+        const client = await getClient();
         const body = e.body ? JSON.parse(e.body) : {};
 
         // --- ACCOUNTS ---
@@ -134,46 +126,6 @@ exports.handler = async (e) => {
                 [body.accountNumber, body.ownerName, body.totalAllotment]);
                 return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
             }
-        }
-
-        // --- ALERTS ---
-        if (path === '/alerts') {
-            if (method === 'GET') {
-                const r = await client.query(`SELECT * FROM account_alerts`);
-                return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
-            }
-            if (method === 'POST') {
-                const alerts = Array.isArray(body) ? body : [body];
-                await client.query('BEGIN');
-                try {
-                    for (const alert of alerts) {
-                        const id = alert.id || 'ALT-' + Math.random().toString(36).substr(2, 5).toUpperCase();
-                        await client.query(
-                            `INSERT INTO account_alerts (id, account_number, alert_type, threshold_percent, is_acknowledged) 
-                             VALUES ($1, $2, $3, $4, false) 
-                             ON CONFLICT (id) DO UPDATE SET alert_type = EXCLUDED.alert_type, threshold_percent = EXCLUDED.threshold_percent, is_acknowledged = false`,
-                            [id, alert.accountNumber, alert.alertType, alert.thresholdPercent]
-                        );
-                    }
-                    await client.query('COMMIT');
-                    return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
-                } catch (err) {
-                    await client.query('ROLLBACK');
-                    throw err;
-                }
-            }
-        }
-
-        if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
-            const alertId = path.split('/').pop();
-            await client.query(`UPDATE account_alerts SET is_acknowledged = COALESCE($1, is_acknowledged) WHERE id = $2`, [body.isAcknowledledged, alertId]);
-            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
-        }
-
-        if (path.match(/^\/alerts\/[^/]+$/) && method === 'DELETE') {
-            const alertId = path.split('/').pop();
-            await client.query(`DELETE FROM account_alerts WHERE id = $1`, [alertId]);
-            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
         // --- FIELDS ---
@@ -191,6 +143,7 @@ exports.handler = async (e) => {
             if (method === 'POST') {
                 await client.query('BEGIN');
                 try {
+                    // UPSERT Logic: If ID exists, UPDATE. If not, INSERT.
                     await client.query(`INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, "lateral", tap_number, primary_account_number) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, $15) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, company_name=EXCLUDED.company_name, address=EXCLUDED.address, phone=EXCLUDED.phone, crop=EXCLUDED.crop, acres=EXCLUDED.acres, total_water_allocation=EXCLUDED.total_water_allocation, water_allotment=EXCLUDED.water_allotment, lat=EXCLUDED.lat, lng=EXCLUDED.lng, owner=EXCLUDED.owner, "lateral"=EXCLUDED."lateral", tap_number=EXCLUDED.tap_number, primary_account_number=EXCLUDED.primary_account_number`, 
                     [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber, body.primaryAccountNumber]);
                     
@@ -243,6 +196,7 @@ exports.handler = async (e) => {
 
         // --- WATER BANK ---
         if (path === '/water-bank' && method === 'GET') {
+            // Mock data for now
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify([
                 { id: 'WB1', fieldAssociation: 'North Reservoir', amountAvailable: 150.5, lateral: 'Lateral 8.13' },
                 { id: 'WB2', fieldAssociation: 'Community Pool', amountAvailable: 45.0, lateral: 'Lateral A' }
@@ -278,7 +232,7 @@ exports.handler = async (e) => {
 
         // --- ADMIN ---
         if (path === '/admin/reset-db' && method === 'POST') {
-            await client.query(`DROP TABLE IF EXISTS account_alerts, field_headgates, water_orders, headgates, laterals, fields, accounts CASCADE`);
+            await client.query(`DROP TABLE IF EXISTS field_headgates, water_orders, headgates, laterals, fields, accounts CASCADE`);
             schemaDone = false; 
             await initSchema(client);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({msg: "Reset Complete"}) };
@@ -289,9 +243,5 @@ exports.handler = async (e) => {
     } catch (err) {
         console.error(err);
         return { statusCode: 500, headers: resHeaders, body: JSON.stringify({msg: "Backend Error", error: err.message, stack: err.stack}) };
-    } finally {
-        if (client) {
-            client.release();
-        }
     }
 };
