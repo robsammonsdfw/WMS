@@ -77,7 +77,6 @@ async function getPool() {
         const { DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT } = process.env;
         if (!DB_HOST || !DB_PASSWORD) throw new Error("DB Connection Details Missing");
         
-        // Using pg.Pool prevents the "Client has already been connected" bug in warm Lambdas
         pool = new pg.Pool({ 
             host: DB_HOST, 
             port: DB_PORT || 5432, 
@@ -93,20 +92,23 @@ async function getPool() {
 }
 
 exports.handler = async (e) => {
+    // API Gateway requires CORS headers explicitly attached to EVERY response
     const resHeaders = { 
         "Access-Control-Allow-Origin": "*", 
-        "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key", 
+        "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key,Authorization", 
         "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", 
         "Content-Type": "application/json" 
     };
+
+    // Extract Method (API Gateway format)
+    const method = e.httpMethod || "GET";
+
+    if (method === 'OPTIONS') {
+        return { statusCode: 200, headers: resHeaders, body: '' };
+    }
     
-    // FIX: Properly extract the method from AWS Function URL payload structure
-    const method = e.requestContext?.http?.method || e.httpMethod || "GET";
-    
-    // FIX: Immediately return 200 OK for OPTIONS preflight checks
-    if (method === 'OPTIONS') return { statusCode: 200, headers: resHeaders, body: '' };
-    
-    let path = (e.rawPath || e.path || "/");
+    // Extract Path (API Gateway format)
+    let path = e.path || "/";
     path = path.replace(/^\/(v1|prod|dev|v2)/, ""); 
     path = path.split('?')[0]; 
     path = path.replace(/\/$/, ""); 
