@@ -1,7 +1,7 @@
-
-import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount } from '../types';
+import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount, AccountAlert } from '../types';
 
 const getBaseUrl = () => {
+  // Reverted to your original APP_CONFIG logic, pointing to your East Coast API Gateway
   let url = (window as any).APP_CONFIG?.API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
   if (url.endsWith('/')) url = url.slice(0, -1);
   return url;
@@ -14,7 +14,7 @@ const NUMERIC_FIELDS = [
   'acres', 'totalWaterAllocation', 'waterUsed', 'waterAllotment', 
   'allotmentUsed', 'lat', 'lng', 'requestedAmount', 'requestedInches',
   'amountAvailable', 'allocationForField', 'usageForField', 'currentRunningInches',
-  'totalAllotment'
+  'totalAllotment', 'thresholdPercent'
 ];
 
 const normalizeData = (data: any): any => {
@@ -85,3 +85,9 @@ export const getWaterBank = (): Promise<WaterBankEntry[]> => apiFetch('/water-ba
 export const getWaterAccounts = (): Promise<WaterAccount[]> => apiFetch('/accounts').catch(() => []);
 export const createWaterAccount = (data: Partial<WaterAccount>): Promise<any> => apiFetch('/accounts', { method: 'POST', body: JSON.stringify(data) });
 export const resetDatabase = (): Promise<any> => apiFetch('/admin/reset-db', { method: 'POST' });
+
+// --- Alert Services ---
+export const getAlerts = (): Promise<AccountAlert[]> => apiFetch('/alerts').catch(() => []);
+export const createAlerts = (data: Partial<AccountAlert>[]): Promise<any> => apiFetch('/alerts', { method: 'POST', body: JSON.stringify(data) });
+export const updateAlert = (id: string, data: Partial<AccountAlert>): Promise<any> => apiFetch(`/alerts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteAlert = (id: string): Promise<any> => apiFetch(`/alerts/${id}`, { method: 'DELETE' });

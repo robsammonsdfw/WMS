@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { WaterOrder, WaterOrderStatus, User, Lateral, Headgate, UserRole, Field } from '../types';
@@ -25,6 +24,9 @@ type AnalyticsGrouping = 'lateral' | 'rider';
 type AnalyticsTimeframe = 'today' | 'week' | 'month';
 
 const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders, refreshWaterOrders, refreshFields }) => {
+  // DEFENSIVE CHECK: Ensure waterOrders is always an array
+  const safeOrders = Array.isArray(waterOrders) ? waterOrders : [];
+
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [selectedRider, setSelectedRider] = useState<User | null>(null);
   const [laterals, setLaterals] = useState<Lateral[]>([]);
@@ -34,7 +36,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   // Analytics State
   const [grouping, setGrouping] = useState<AnalyticsGrouping>('lateral');
-  const [timeframe, setTimeframe] = useState<AnalyticsTimeframe>('week');
+  const [timeframe, setTimeframe] = useState<AnalyticsTimeframe>('today');
   
   // Admin form states
   const [newLatName, setNewLatName] = useState('');
@@ -53,9 +55,10 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
     setIsLoading(true);
     try {
         const [l, h, f] = await Promise.all([getLaterals(), getHeadgates(), getFields()]);
-        setLaterals(l || []);
-        setHeadgates(h || []);
-        setFields(f || []);
+        // DEFENSIVE CHECKS: Protect against backend returning objects instead of arrays
+        setLaterals(Array.isArray(l) ? l : []);
+        setHeadgates(Array.isArray(h) ? h : []);
+        setFields(Array.isArray(f) ? f : []);
     } catch (e) {
         console.error("Failed to load admin data", e);
     } finally {
@@ -92,7 +95,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
         }
     };
 
-    waterOrders.forEach(order => {
+    safeOrders.forEach(order => {
         let key = 'Unassigned';
         let name = 'Unassigned';
 
@@ -180,13 +183,13 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
     }
 
     return finalArray;
-  }, [waterOrders, ditchRiders, grouping, timeframe]);
+  }, [safeOrders, ditchRiders, grouping, timeframe]);
 
-  const totalRunningAF = waterOrders
+  const totalRunningAF = safeOrders
     .filter(o => o.status === WaterOrderStatus.InProgress)
     .reduce((sum, o) => sum + (Number(o.requestedAmount) || 0), 0);
   
-  const pendingCount = waterOrders.filter(o => o.status === WaterOrderStatus.Pending).length;
+  const pendingCount = safeOrders.filter(o => o.status === WaterOrderStatus.Pending).length;
 
   const combinedLateralOptions = useMemo(() => {
     const options = [...laterals];
@@ -409,7 +412,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
         {/* Action Queue */}
         <div className="w-full">
             <WaterOrderList 
-                orders={waterOrders.filter(o => o.status === WaterOrderStatus.Pending)} 
+                orders={safeOrders.filter(o => o.status === WaterOrderStatus.Pending)} 
                 title="Immediate Approval Queue"
                 actions={(o) => (
                     <div className="flex space-x-2">
@@ -424,7 +427,7 @@ const WaterOfficeDashboard: React.FC<WaterOfficeDashboardProps> = ({ waterOrders
 
   const renderRiders = () => {
     if (selectedRider) {
-        const riderOrders = waterOrders.filter(o => o.status === WaterOrderStatus.Approved || o.status === WaterOrderStatus.InProgress);
+        const riderOrders = safeOrders.filter(o => o.status === WaterOrderStatus.Approved || o.status === WaterOrderStatus.InProgress);
         const groupedRun = laterals.map(lat => ({
             ...lat,
             orders: riderOrders.filter(o => o.lateralId === lat.id)
