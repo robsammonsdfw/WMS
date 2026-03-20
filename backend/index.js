@@ -1,11 +1,10 @@
 const pg = require("pg");
-let dbClient = null;
+let pool = null;
 let schemaDone = false;
 
 async function initSchema(client) {
     if (schemaDone) return;
     
-    // Create base tables safely
     const queries = [
         `CREATE TABLE IF NOT EXISTS laterals (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS headgates (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, lateral_id VARCHAR(255) REFERENCES laterals(id), tap_number VARCHAR(50))`,
@@ -60,7 +59,6 @@ async function initSchema(client) {
         await client.query(q);
     }
 
-    // Migration steps - run loosely
     try {
         await client.query(`ALTER TABLE water_orders ADD COLUMN IF NOT EXISTS delivery_end_date DATE`);
         await client.query(`ALTER TABLE water_orders ADD COLUMN IF NOT EXISTS account_number VARCHAR(255)`);
@@ -74,28 +72,24 @@ async function initSchema(client) {
     schemaDone = true;
 }
 
-async function getClient() {
-    if (dbClient) {
-        try { await dbClient.query('SELECT 1'); return dbClient; } 
-        catch (e) { dbClient = null; }
+async function getPool() {
+    if (!pool) {
+        const { DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT } = process.env;
+        if (!DB_HOST || !DB_PASSWORD) throw new Error("DB Connection Details Missing");
+        
+        // Using pg.Pool prevents the "Client has already been connected" bug in warm Lambdas
+        pool = new pg.Pool({ 
+            host: DB_HOST, 
+            port: DB_PORT || 5432, 
+            user: DB_USER, 
+            password: DB_PASSWORD, 
+            database: DB_NAME, 
+            ssl: { rejectUnauthorized: false }, 
+            connectionTimeoutMillis: 5000,
+            max: 5 
+        });
     }
-    const { DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT } = process.env;
-    if (!DB_HOST || !DB_PASSWORD) throw new Error("DB Connection Details Missing");
-    
-    const client = new pg.Client({ 
-        host: DB_HOST, 
-        port: DB_PORT || 5432, 
-        user: DB_USER, 
-        password: DB_PASSWORD, 
-        database: DB_NAME, 
-        ssl: { rejectUnauthorized: false }, 
-        connectionTimeoutMillis: 5000 
-    });
-    
-    await client.connect();
-    await initSchema(client);
-    dbClient = client;
-    return client;
+    return pool;
 }
 
 exports.handler = async (e) => {
@@ -106,19 +100,25 @@ exports.handler = async (e) => {
         "Content-Type": "application/json" 
     };
     
-    if (e.httpMethod === 'OPTIONS') return { statusCode: 200, headers: resHeaders, body: '' };
+    // FIX: Properly extract the method from AWS Function URL payload structure
+    const method = e.requestContext?.http?.method || e.httpMethod || "GET";
     
-    // Robust path parsing
+    // FIX: Immediately return 200 OK for OPTIONS preflight checks
+    if (method === 'OPTIONS') return { statusCode: 200, headers: resHeaders, body: '' };
+    
     let path = (e.rawPath || e.path || "/");
     path = path.replace(/^\/(v1|prod|dev|v2)/, ""); 
     path = path.split('?')[0]; 
     path = path.replace(/\/$/, ""); 
     if (path === "") path = "/";
 
-    const method = e.httpMethod || (e.requestContext && e.requestContext.http ? e.requestContext.http.method : "GET");
-    
+    let client;
     try {
-        const client = await getClient();
+        const dbPool = await getPool();
+        client = await dbPool.connect();
+
+        await initSchema(client);
+
         const body = e.body ? JSON.parse(e.body) : {};
 
         // --- ACCOUNTS ---
@@ -189,7 +189,6 @@ exports.handler = async (e) => {
             if (method === 'POST') {
                 await client.query('BEGIN');
                 try {
-                    // UPSERT Logic: If ID exists, UPDATE. If not, INSERT.
                     await client.query(`INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, "lateral", tap_number, primary_account_number) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, $15) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, company_name=EXCLUDED.company_name, address=EXCLUDED.address, phone=EXCLUDED.phone, crop=EXCLUDED.crop, acres=EXCLUDED.acres, total_water_allocation=EXCLUDED.total_water_allocation, water_allotment=EXCLUDED.water_allotment, lat=EXCLUDED.lat, lng=EXCLUDED.lng, owner=EXCLUDED.owner, "lateral"=EXCLUDED."lateral", tap_number=EXCLUDED.tap_number, primary_account_number=EXCLUDED.primary_account_number`, 
                     [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber, body.primaryAccountNumber]);
                     
@@ -242,7 +241,6 @@ exports.handler = async (e) => {
 
         // --- WATER BANK ---
         if (path === '/water-bank' && method === 'GET') {
-            // Mock data for now
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify([
                 { id: 'WB1', fieldAssociation: 'North Reservoir', amountAvailable: 150.5, lateral: 'Lateral 8.13' },
                 { id: 'WB2', fieldAssociation: 'Community Pool', amountAvailable: 45.0, lateral: 'Lateral A' }
@@ -289,5 +287,9 @@ exports.handler = async (e) => {
     } catch (err) {
         console.error(err);
         return { statusCode: 500, headers: resHeaders, body: JSON.stringify({msg: "Backend Error", error: err.message, stack: err.stack}) };
+    } finally {
+        if (client) {
+            client.release();
+        }
     }
 };
