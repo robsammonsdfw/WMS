@@ -35,6 +35,10 @@ type ViewMode = 'standard' | 'feed' | 'admin' | 'accounts';
 type AdminTab = 'registry' | 'alerts';
 
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders, refreshFields }) => {
+  // DEFENSIVE PROGRAMMING: Ensure these are ALWAYS arrays, even if the backend returns an object/error
+  const safeFields = Array.isArray(fields) ? fields : [];
+  const safeOrders = Array.isArray(waterOrders) ? waterOrders : [];
+
   const [viewMode, setViewMode] = useState<ViewMode>('standard');
   const [adminTab, setAdminTab] = useState<AdminTab>('registry');
   
@@ -51,6 +55,10 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [accounts, setAccounts] = useState<WaterAccount[]>([]);
   const [alerts, setAlerts] = useState<AccountAlert[]>([]);
   const [unacknowledgedAlerts, setUnacknowledgedAlerts] = useState<AccountAlert[]>([]);
+
+  // Safety wrappers for internal states
+  const safeAccounts = Array.isArray(accounts) ? accounts : [];
+  const safeAlerts = Array.isArray(alerts) ? alerts : [];
 
   // Field Registry States
   const [newFieldId, setNewFieldId] = useState('');
@@ -76,12 +84,11 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newAccAllotment, setNewAccAllotment] = useState('');
 
   // Alerts Form States
-  const [alertAccount, setAlertAccount] = useState<string>(''); // 'ALL' for bulk
+  const [alertAccount, setAlertAccount] = useState<string>(''); 
   const [alertType, setAlertType] = useState<AlertType>(AlertType.Both);
   const [alertThreshold, setAlertThreshold] = useState<number>(10);
   const [showAllThresholds, setShowAllThresholds] = useState(false);
 
-  // Timer for real-time updates
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
@@ -99,14 +106,14 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const fetchAccounts = async () => {
       try {
           const accs = await getWaterAccounts();
-          setAccounts(accs);
+          setAccounts(accs || []);
       } catch(e) { console.error(e); }
   };
 
   const fetchAlertsData = async () => {
       try {
           const a = await getAlerts();
-          setAlerts(a);
+          setAlerts(a || []);
       } catch(e) { console.error(e); }
   };
 
@@ -119,15 +126,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   // Helper to Calculate Real-Time Usage per Field
   const calculateFieldStats = (field: Field) => {
-    const fieldOrders = waterOrders.filter(o => o.fieldId === field.id);
+    const fieldOrders = safeOrders.filter(o => o.fieldId === field.id);
     const calculatedTotalUsage = fieldOrders.reduce((sum, order) => {
         const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
         let duration = 0;
         
-        // NATIVE DATE PARSING: Removes the risky .split('-') approach
         if (order.deliveryStartDate) {
             const start = new Date(order.deliveryStartDate);
-            // Verify date is valid before doing math
             if (!isNaN(start.getTime())) {
                 if (order.status === WaterOrderStatus.InProgress) {
                     duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
@@ -151,15 +156,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   // Helper to Calculate Real-Time Usage per ACCOUNT
   const calculateAccountStats = (account: WaterAccount) => {
-      const accountOrders = waterOrders.filter(o => o.accountNumber === account.accountNumber);
+      const accountOrders = safeOrders.filter(o => o.accountNumber === account.accountNumber);
       const usage = accountOrders.reduce((sum, order) => {
         const rate = (order.requestedInches || (order.requestedAmount * 25)) / 25;
         let duration = 0;
         
-        // NATIVE DATE PARSING: Removes the risky .split('-') approach
         if (order.deliveryStartDate) {
             const start = new Date(order.deliveryStartDate);
-            // Verify date is valid before doing math
             if (!isNaN(start.getTime())) {
                 if (order.status === WaterOrderStatus.InProgress) {
                      duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
@@ -181,13 +184,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   // Global Alert Acknowledgement Trigger
   useEffect(() => {
     const triggered: AccountAlert[] = [];
-    alerts.forEach(alert => {
+    safeAlerts.forEach(alert => {
         if (alert.isAcknowledged) return;
         
-        const acc = accounts.find(a => a.accountNumber === alert.accountNumber);
+        const acc = safeAccounts.find(a => a.accountNumber === alert.accountNumber);
         if (!acc) return;
         
-        const linkedFields = fields.filter(f => f.primaryAccountNumber === alert.accountNumber);
+        const linkedFields = safeFields.filter(f => f.primaryAccountNumber === alert.accountNumber);
         let isTriggered = false;
         
         if (alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) {
@@ -212,7 +215,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         }
     });
     
-    // Only update state if IDs changed to prevent infinite re-renders
     const currentIds = unacknowledgedAlerts.map(a => a.id).sort().join(',');
     const newIds = triggered.map(a => a.id).sort().join(',');
     
@@ -229,12 +231,12 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   };
 
   // Aggregated Stats
-  const totalWaterUsed = fields.reduce((sum, field) => sum + calculateFieldStats(field).used, 0);
-  const totalAllocation = fields.reduce((sum, field) => sum + (Number(field.totalWaterAllocation) || 0), 0);
+  const totalWaterUsed = safeFields.reduce((sum, field) => sum + calculateFieldStats(field).used, 0);
+  const totalAllocation = safeFields.reduce((sum, field) => sum + (Number(field.totalWaterAllocation) || 0), 0);
   const allocationUsedPercent = totalAllocation > 0 ? ((totalWaterUsed / totalAllocation) * 100).toFixed(1) : "0";
 
-  const awaitingApprovalOrders = waterOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
-  const myRecentOrders = waterOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
+  const awaitingApprovalOrders = safeOrders.filter(o => o.status === WaterOrderStatus.AwaitingApproval);
+  const myRecentOrders = safeOrders.filter(o => o.requester === user.name || awaitingApprovalOrders.some(aao => aao.id === o.id));
 
   const handleResetDb = async () => {
     if (window.confirm("Are you sure you want to reset the entire database? This cannot be undone.")) {
@@ -270,7 +272,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     try {
       const parsed = JSON.parse(data);
       if (parsed.fieldId) {
-        const field = fields.find(f => f.id === parsed.fieldId);
+        const field = safeFields.find(f => f.id === parsed.fieldId);
         if (field) {
           setSelectedFieldDetails(field);
           setIsScannerOpen(false);
@@ -338,7 +340,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       try {
           const payload: Partial<AccountAlert>[] = [];
           if (alertAccount === 'ALL') {
-              accounts.forEach(acc => {
+              safeAccounts.forEach(acc => {
                   payload.push({ accountNumber: acc.accountNumber, alertType, thresholdPercent: alertThreshold });
               });
           } else {
@@ -363,7 +365,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   const handleManualOrderCreate = async (orderData: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; deliveryEndDate?: string; accountNumber?: string; }) => {
     try {
-      const field = fields.find(f => f.id === orderData.fieldId);
+      const field = safeFields.find(f => f.id === orderData.fieldId);
       if (!field) throw new Error("Field not found in registry.");
       await createWaterOrder({
         ...orderData, fieldName: field.name, requester: user.name, status: WaterOrderStatus.AwaitingApproval,
@@ -405,7 +407,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
            </div>
 
            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-               {accounts.map(acc => {
+               {safeAccounts.map(acc => {
                    const stats = calculateAccountStats(acc);
                    return (
                        <div key={acc.accountNumber} className="bg-white p-8 rounded-3xl shadow-lg border border-gray-100 relative overflow-hidden group">
@@ -437,7 +439,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   );
 
   const renderAlertsView = () => {
-      // Create options: 0% to 30%, or 0% to 100%
       const thresholds = showAllThresholds 
           ? Array.from({length: 21}, (_, i) => i * 5)
           : Array.from({length: 7}, (_, i) => i * 5);
@@ -458,7 +459,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                     <select value={alertAccount} onChange={e => setAlertAccount(e.target.value)} className="w-full px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
                                         <option value="" disabled>Select an account...</option>
                                         <option value="ALL" className="font-black text-rose-600">⚡ Bulk Set All Accounts ⚡</option>
-                                        {accounts.map(acc => (
+                                        {safeAccounts.map(acc => (
                                             <option key={acc.accountNumber} value={acc.accountNumber}>{acc.accountNumber} - {acc.ownerName}</option>
                                         ))}
                                     </select>
@@ -506,9 +507,9 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-100">
-                                {alerts.length === 0 ? (
+                                {safeAlerts.length === 0 ? (
                                     <tr><td colSpan={5} className="px-6 py-8 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">No alerts registered</td></tr>
-                                ) : alerts.map(alert => (
+                                ) : safeAlerts.map(alert => (
                                     <tr key={alert.id} className="hover:bg-gray-50">
                                         <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{alert.accountNumber}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold uppercase text-gray-600">
@@ -649,7 +650,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 )}
             </div>
 
-            {/* Sub-Tabs for Infrastructure */}
             <div className="bg-gray-50 border-b border-gray-200 px-8 flex gap-4">
                 <button 
                     onClick={() => setAdminTab('registry')}
@@ -670,18 +670,16 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             </div>
         </div>
 
-        {/* The Field Grid (Always show below admin forms so user can see what they edit/alert on) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {fields.map(f => {
-                // Determine Flashing State for this field
-                const linkedAlerts = alerts.filter(a => a.accountNumber === f.primaryAccountNumber);
+            {safeFields.map(f => {
+                const linkedAlerts = safeAlerts.filter(a => a.accountNumber === f.primaryAccountNumber);
                 let isFlashing = false;
                 
-                const fOrders = waterOrders.filter(o => o.fieldId === f.id);
+                const fOrders = safeOrders.filter(o => o.fieldId === f.id);
                 const isRunning = fOrders.some(o => o.status === WaterOrderStatus.InProgress);
 
                 if (f.primaryAccountNumber) {
-                    const acc = accounts.find(a => a.accountNumber === f.primaryAccountNumber);
+                    const acc = safeAccounts.find(a => a.accountNumber === f.primaryAccountNumber);
                     linkedAlerts.forEach(alert => {
                         let triggered = false;
                         if ((alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) && acc) {
@@ -748,7 +746,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto relative">
-      {/* Inject custom animation keyframes for flashing fields safely */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes flashRedWhite {
             0%, 100% { background-color: white; border-color: #f3f4f6; }
@@ -762,7 +759,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         .animate-flash-blue { animation: flashBlueWhite 1.5s infinite; }
       `}} />
 
-      {/* Global Alert Notification Popup */}
       {unacknowledgedAlerts.length > 0 && (
           <div className="fixed inset-0 bg-red-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
               <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-xl overflow-hidden border-4 border-red-500 animate-in zoom-in-95 duration-200">
@@ -813,7 +809,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       </div>
       
       {viewMode === 'admin' ? renderAdminView() : viewMode === 'accounts' ? renderAccountsView() : viewMode === 'feed' ? (
-        <RemainingFeedView fields={fields} waterOrders={waterOrders} onFieldClick={setSelectedFieldDetails} />
+        <RemainingFeedView fields={safeFields} waterOrders={safeOrders} onFieldClick={setSelectedFieldDetails} />
       ) : (
         <>
             <SeasonStatistics>
@@ -839,15 +835,14 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100">
-                            {fields.map(field => {
+                            {safeFields.map(field => {
                                 const stats = calculateFieldStats(field);
                                 
-                                // Calculate Flashing for standard table view
-                                const linkedAlerts = alerts.filter(a => a.accountNumber === field.primaryAccountNumber);
+                                const linkedAlerts = safeAlerts.filter(a => a.accountNumber === field.primaryAccountNumber);
                                 let isFlashing = false;
-                                const isRunning = waterOrders.some(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
+                                const isRunning = safeOrders.some(o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress);
                                 if (field.primaryAccountNumber) {
-                                    const acc = accounts.find(a => a.accountNumber === field.primaryAccountNumber);
+                                    const acc = safeAccounts.find(a => a.accountNumber === field.primaryAccountNumber);
                                     linkedAlerts.forEach(alert => {
                                         let triggered = false;
                                         if ((alert.alertType === AlertType.Allotment || alert.alertType === AlertType.Both) && acc) {
@@ -895,8 +890,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
       {alertField && <WaterUsageAlertModal field={alertField} onClose={() => setAlertField(null)} onUpdate={refreshWaterOrders} />}
       {selectedFieldForQR && <QRCodeModal field={selectedFieldForQR} onClose={() => setSelectedFieldForQR(null)} />}
-      {selectedFieldDetails && <FieldDetailsModal field={selectedFieldDetails} orders={waterOrders} onClose={() => setSelectedFieldDetails(null)} onUpdate={refreshFields} onCreateOrder={(type) => { setCreateOrderInitialFieldId(selectedFieldDetails.id); setCreateOrderType(type); setIsNewOrderModalOpen(true); }} />}
-      {isNewOrderModalOpen && <NewWaterOrderModal fields={fields} initialFieldId={createOrderInitialFieldId} initialOrderType={createOrderType} onClose={() => setIsNewOrderModalOpen(false)} onOrderCreate={handleManualOrderCreate} />}
+      {selectedFieldDetails && <FieldDetailsModal field={selectedFieldDetails} orders={safeOrders} onClose={() => setSelectedFieldDetails(null)} onUpdate={refreshFields} onCreateOrder={(type) => { setCreateOrderInitialFieldId(selectedFieldDetails.id); setCreateOrderType(type); setIsNewOrderModalOpen(true); }} />}
+      {isNewOrderModalOpen && <NewWaterOrderModal fields={safeFields} initialFieldId={createOrderInitialFieldId} initialOrderType={createOrderType} onClose={() => setIsNewOrderModalOpen(false)} onOrderCreate={handleManualOrderCreate} />}
       {isScannerOpen && <Scanner onScan={handleIrrigatorScan} onClose={() => setIsScannerOpen(false)} />}
     </div>
   );
