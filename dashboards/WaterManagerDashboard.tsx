@@ -19,7 +19,7 @@ import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
 import { 
     createWaterOrder, updateWaterOrder, resetDatabase, 
     getLaterals, getHeadgates, createField, deleteField, 
-    getWaterAccounts, createWaterAccount,
+    getWaterAccounts, createWaterAccount, deleteWaterAccount,
     getAlerts, createAlerts, updateAlert, deleteAlert
 } from '../services/api';
 
@@ -80,6 +80,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newAccNumber, setNewAccNumber] = useState('');
   const [newAccOwner, setNewAccOwner] = useState('');
   const [newAccAllotment, setNewAccAllotment] = useState('');
+  const [isEditingAccount, setIsEditingAccount] = useState(false);
 
   // Alerts Form States
   const [alertAccount, setAlertAccount] = useState<string>(''); 
@@ -317,15 +318,40 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     } catch (err: any) { alert(err.message); }
   };
 
+  const handleEditAccount = (acc: WaterAccount) => {
+      setNewAccNumber(acc.accountNumber);
+      setNewAccOwner(acc.ownerName);
+      setNewAccAllotment(acc.totalAllotment.toString());
+      setIsEditingAccount(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleClearAccountForm = () => {
+      setNewAccNumber('');
+      setNewAccOwner('');
+      setNewAccAllotment('');
+      setIsEditingAccount(false);
+  };
+
   const handleCreateAccount = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newAccNumber || !newAccOwner) return alert("Account Number and Owner required");
       try {
           await createWaterAccount({ accountNumber: newAccNumber, ownerName: newAccOwner, totalAllotment: parseFloat(newAccAllotment) || 0 });
-          setNewAccNumber(''); setNewAccOwner(''); setNewAccAllotment('');
+          handleClearAccountForm();
           await fetchAccounts();
-          alert("Account Created.");
+          alert(isEditingAccount ? "Account Ledger Updated." : "Account Created.");
       } catch (e: any) { alert(e.message); }
+  };
+
+  const handleDeleteAccount = async (e: React.MouseEvent, accNum: string) => {
+      e.stopPropagation();
+      if (window.confirm(`Are you sure you want to delete account ${accNum}?`)) {
+          try {
+              await deleteWaterAccount(accNum);
+              await fetchAccounts();
+          } catch (e: any) { alert(e.message); }
+      }
   };
 
   const handleCreateAlert = async (e: React.FormEvent) => {
@@ -374,28 +400,41 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   const renderAccountsView = () => (
       <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
-           <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden">
-                <div className="bg-emerald-900 p-8 text-white">
-                    <h3 className="text-2xl font-black uppercase tracking-tight">Water Bank Ledger</h3>
-                    <p className="text-emerald-200 font-bold text-sm">Manage Account Allotments and Balance</p>
+           <div className={`bg-white rounded-[2rem] shadow-2xl border transition-all overflow-hidden ${isEditingAccount ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
+                <div className={`p-8 text-white flex justify-between items-center transition-colors ${isEditingAccount ? 'bg-orange-600' : 'bg-emerald-900'}`}>
+                    <div>
+                        <h3 className="text-2xl font-black uppercase tracking-tight">Water Bank Ledger</h3>
+                        <p className={`font-bold text-sm ${isEditingAccount ? 'text-orange-200' : 'text-emerald-200'}`}>
+                            {isEditingAccount ? 'Editing Account Data' : 'Manage Account Allotments and Balance'}
+                        </p>
+                    </div>
                 </div>
                 <div className="p-8">
-                     <form onSubmit={handleCreateAccount} className="space-y-6 bg-emerald-50/50 p-8 rounded-[2.5rem] border border-emerald-100 shadow-sm">
+                     <form onSubmit={handleCreateAccount} className={`space-y-6 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingAccount ? 'bg-orange-50/50 border-orange-100' : 'bg-emerald-50/50 border-emerald-100'}`}>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Account Number</label>
-                                <input value={newAccNumber} onChange={e => setNewAccNumber(e.target.value)} placeholder="ACCT-2024-001" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+                                <input value={newAccNumber} onChange={e => setNewAccNumber(e.target.value)} placeholder="ACCT-2024-001" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingAccount ? 'border-orange-200 focus:ring-orange-500 bg-white' : 'border-gray-200 focus:ring-emerald-500'}`} />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner Name</label>
-                                <input value={newAccOwner} onChange={e => setNewAccOwner(e.target.value)} placeholder="Entity Name" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+                                <input value={newAccOwner} onChange={e => setNewAccOwner(e.target.value)} placeholder="Entity Name" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingAccount ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-emerald-500'}`} />
                             </div>
                              <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Total Allotment (AF)</label>
-                                <input type="number" value={newAccAllotment} onChange={e => setNewAccAllotment(e.target.value)} placeholder="1000.00" className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold focus:ring-2 focus:ring-emerald-500 outline-none" />
+                                <input type="number" value={newAccAllotment} onChange={e => setNewAccAllotment(e.target.value)} placeholder="1000.00" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingAccount ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-emerald-500'}`} />
                             </div>
                         </div>
-                        <button type="submit" className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-emerald-700 shadow-xl transition-all">Create Account Ledger</button>
+                        <div className="flex gap-4">
+                            {isEditingAccount && (
+                                <button type="button" onClick={handleClearAccountForm} className="flex-1 bg-gray-200 text-gray-700 py-4 rounded-xl font-black uppercase text-sm hover:bg-gray-300 shadow-xl transition-all">
+                                    Cancel Edit
+                                </button>
+                            )}
+                            <button type="submit" className={`flex-1 text-white py-4 rounded-xl font-black uppercase text-sm shadow-xl transition-all ${isEditingAccount ? 'bg-orange-600 hover:bg-orange-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                                {isEditingAccount ? "Update Account Ledger" : "Create Account Ledger"}
+                            </button>
+                        </div>
                      </form>
                 </div>
            </div>
@@ -404,11 +443,22 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                {safeAccounts.map(acc => {
                    const stats = calculateAccountStats(acc);
                    return (
-                       <div key={acc.accountNumber} className="bg-white p-8 rounded-3xl shadow-lg border border-gray-100 relative overflow-hidden group">
+                       <div 
+                            key={acc.accountNumber} 
+                            onClick={() => handleEditAccount(acc)}
+                            className={`bg-white p-8 rounded-3xl shadow-lg border cursor-pointer relative overflow-hidden group transition-all hover:-translate-y-1 ${isEditingAccount && newAccNumber === acc.accountNumber ? 'border-orange-400 ring-2 ring-orange-200 shadow-orange-100' : 'border-gray-100 hover:border-emerald-200'}`}
+                        >
+                           <button 
+                                onClick={(e) => handleDeleteAccount(e, acc.accountNumber)}
+                                className="absolute top-4 right-4 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 z-10"
+                                title="Delete Account"
+                            >
+                                <TrashIcon className="h-4 w-4" />
+                            </button>
                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                                <DocumentReportIcon className="h-24 w-24 text-emerald-900" />
                            </div>
-                           <h4 className="text-2xl font-black text-gray-900">{acc.accountNumber}</h4>
+                           <h4 className={`text-2xl font-black transition-colors ${isEditingAccount && newAccNumber === acc.accountNumber ? 'text-orange-600' : 'text-gray-900'}`}>{acc.accountNumber}</h4>
                            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">{acc.ownerName}</p>
                            
                            <div className="space-y-4">
@@ -425,6 +475,11 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                    <span className="text-2xl font-black text-emerald-600">{stats.remaining.toFixed(2)} AF</span>
                                </div>
                            </div>
+                           {!isEditingAccount && (
+                               <div className="absolute inset-0 bg-emerald-900/0 group-hover:bg-emerald-900/5 rounded-3xl transition-colors flex items-center justify-center pointer-events-none">
+                                   <span className="opacity-0 group-hover:opacity-100 bg-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm text-emerald-600">Click to Edit</span>
+                               </div>
+                           )}
                        </div>
                    )
                })}
@@ -606,7 +661,12 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 </div>
                  <div className="space-y-1 col-span-1 md:col-span-2 mt-4">
                     <label className="text-[10px] font-black text-emerald-600 uppercase ml-1 tracking-widest">Primary Account Number (Billing)</label>
-                    <input value={newPrimaryAccount} onChange={e => setNewPrimaryAccount(e.target.value)} placeholder="e.g. ACCT-12345" className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl font-black text-emerald-900 focus:ring-2 focus:ring-emerald-500 outline-none bg-white" />
+                    <select value={newPrimaryAccount} onChange={e => setNewPrimaryAccount(e.target.value)} className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl font-black text-emerald-900 focus:ring-2 focus:ring-emerald-500 outline-none bg-white">
+                        <option value="">Unassigned / Direct</option>
+                        {safeAccounts.map(acc => (
+                            <option key={acc.accountNumber} value={acc.accountNumber}>{acc.accountNumber} - {acc.ownerName}</option>
+                        ))}
+                    </select>
                 </div>
             </div>
 
@@ -672,7 +732,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 const fOrders = safeOrders.filter(o => o.fieldId === f.id);
                 const isRunning = fOrders.some(o => o.status === WaterOrderStatus.InProgress);
 
-                // Note: We deliberately ignore alert.isAcknowledged here so it flashes continuously until the water issue is fixed
                 if (f.primaryAccountNumber) {
                     const acc = safeAccounts.find(a => a.accountNumber === f.primaryAccountNumber);
                     linkedAlerts.forEach(alert => {

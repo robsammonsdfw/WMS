@@ -91,3 +91,4 @@ export const getAlerts = (): Promise<AccountAlert[]> => apiFetch('/alerts').catc
 export const createAlerts = (data: Partial<AccountAlert>[]): Promise<any> => apiFetch('/alerts', { method: 'POST', body: JSON.stringify(data) });
 export const updateAlert = (id: string, data: Partial<AccountAlert>): Promise<any> => apiFetch(`/alerts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteAlert = (id: string): Promise<any> => apiFetch(`/alerts/${id}`, { method: 'DELETE' });
+export const deleteWaterAccount = (id: string): Promise<any> => apiFetch(`/accounts/${id}`, { method: 'DELETE' });

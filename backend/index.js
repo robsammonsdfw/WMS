@@ -136,6 +136,11 @@ exports.handler = async (e) => {
                 return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
             }
         }
+        if (path.match(/^\/accounts\/[^/]+$/) && method === 'DELETE') {
+            const accNum = path.split('/').pop();
+            await client.query(`DELETE FROM accounts WHERE account_number = $1`, [accNum]);
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
+        }
 
         if (path === '/alerts') {
             if (method === 'GET') {
