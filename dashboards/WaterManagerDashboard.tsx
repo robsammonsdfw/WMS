@@ -35,7 +35,6 @@ type ViewMode = 'standard' | 'feed' | 'admin' | 'accounts';
 type AdminTab = 'registry' | 'alerts';
 
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders, refreshFields }) => {
-  // DEFENSIVE PROGRAMMING: Ensure these are ALWAYS arrays, even if the backend returns an object/error
   const safeFields = Array.isArray(fields) ? fields : [];
   const safeOrders = Array.isArray(waterOrders) ? waterOrders : [];
 
@@ -56,7 +55,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [alerts, setAlerts] = useState<AccountAlert[]>([]);
   const [unacknowledgedAlerts, setUnacknowledgedAlerts] = useState<AccountAlert[]>([]);
 
-  // Safety wrappers for internal states
   const safeAccounts = Array.isArray(accounts) ? accounts : [];
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
 
@@ -124,7 +122,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     } catch (e) { console.error(e); } finally { setIsLoadingAdmin(false); }
   };
 
-  // Helper to Calculate Real-Time Usage per Field
   const calculateFieldStats = (field: Field) => {
     const fieldOrders = safeOrders.filter(o => o.fieldId === field.id);
     const calculatedTotalUsage = fieldOrders.reduce((sum, order) => {
@@ -154,7 +151,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     return { used, total, remaining };
   };
 
-  // Helper to Calculate Real-Time Usage per ACCOUNT
   const calculateAccountStats = (account: WaterAccount) => {
       const accountOrders = safeOrders.filter(o => o.accountNumber === account.accountNumber);
       const usage = accountOrders.reduce((sum, order) => {
@@ -181,7 +177,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       return { used: usage, total, remaining: Math.max(0, total - usage) };
   };
 
-  // Global Alert Acknowledgement Trigger
   useEffect(() => {
     const triggered: AccountAlert[] = [];
     safeAlerts.forEach(alert => {
@@ -230,7 +225,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       } catch (e: any) { alert("Failed to acknowledge: " + e.message); }
   };
 
-  // Aggregated Stats
   const totalWaterUsed = safeFields.reduce((sum, field) => sum + calculateFieldStats(field).used, 0);
   const totalAllocation = safeFields.reduce((sum, field) => sum + (Number(field.totalWaterAllocation) || 0), 0);
   const allocationUsedPercent = totalAllocation > 0 ? ((totalWaterUsed / totalAllocation) * 100).toFixed(1) : "0";
@@ -294,7 +288,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     setNewFieldAllotment(field.waterAllotment?.toString() || ''); setNewLatCoord(field.lat?.toString() || ''); setNewLngCoord(field.lng?.toString() || '');
     setNewTypedLateral(field.lateral || ''); setNewTypedHeadgate(field.tapNumber || ''); setNewPrimaryAccount(field.primaryAccountNumber || '');
     setIsEditingField(true);
-    setAdminTab('registry'); // Ensure we are on registry tab if clicking from outside
+    setAdminTab('registry'); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -678,6 +672,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 const fOrders = safeOrders.filter(o => o.fieldId === f.id);
                 const isRunning = fOrders.some(o => o.status === WaterOrderStatus.InProgress);
 
+                // Note: We deliberately ignore alert.isAcknowledged here so it flashes continuously until the water issue is fixed
                 if (f.primaryAccountNumber) {
                     const acc = safeAccounts.find(a => a.accountNumber === f.primaryAccountNumber);
                     linkedAlerts.forEach(alert => {
@@ -702,7 +697,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 
                 let flashingClass = "";
                 if (isFlashing) {
-                    flashingClass = isRunning ? "animate-flash-blue" : "animate-flash-red";
+                    flashingClass = isRunning ? "animate-flash-blue-slow" : "animate-flash-red-slow";
                 }
 
                 return (
@@ -747,16 +742,16 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto relative">
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes flashRedWhite {
-            0%, 100% { background-color: white; border-color: #f3f4f6; }
-            50% { background-color: #fee2e2; border-color: #ef4444; }
+        @keyframes pulseRed {
+            0%, 100% { background-color: #ffffff; border-color: #f3f4f6; transform: scale(1); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            50% { background-color: #fef2f2; border-color: #ef4444; transform: scale(1.03); box-shadow: 0 10px 25px -5px rgba(239,68,68,0.4); }
         }
-        @keyframes flashBlueWhite {
-            0%, 100% { background-color: white; border-color: #f3f4f6; }
-            50% { background-color: #dbeafe; border-color: #3b82f6; }
+        @keyframes pulseBlue {
+            0%, 100% { background-color: #ffffff; border-color: #f3f4f6; transform: scale(1); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            50% { background-color: #eff6ff; border-color: #3b82f6; transform: scale(1.03); box-shadow: 0 10px 25px -5px rgba(59,130,246,0.4); }
         }
-        .animate-flash-red { animation: flashRedWhite 1.5s infinite; }
-        .animate-flash-blue { animation: flashBlueWhite 1.5s infinite; }
+        .animate-flash-red-slow { animation: pulseRed 7s ease-in-out infinite !important; border-width: 2px !important; z-index: 10; }
+        .animate-flash-blue-slow { animation: pulseBlue 7s ease-in-out infinite !important; border-width: 2px !important; z-index: 10; }
       `}} />
 
       {unacknowledgedAlerts.length > 0 && (
@@ -861,7 +856,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                                         if (triggered) isFlashing = true;
                                     });
                                 }
-                                let flashingClass = isFlashing ? (isRunning ? "animate-flash-blue" : "animate-flash-red") : "";
+                                let flashingClass = isFlashing ? (isRunning ? "animate-flash-blue-slow" : "animate-flash-red-slow") : "";
 
                                 return (
                                 <tr key={field.id} className={`hover:bg-gray-50 cursor-pointer transition-colors ${flashingClass}`} onClick={() => setSelectedFieldDetails(field)}>

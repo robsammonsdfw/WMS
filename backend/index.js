@@ -92,22 +92,24 @@ async function getPool() {
 }
 
 exports.handler = async (e) => {
-    // API Gateway requires CORS headers explicitly attached to EVERY response
     const resHeaders = { 
         "Access-Control-Allow-Origin": "*", 
-        "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,x-api-key,Authorization", 
+        "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,Authorization,Accept", 
         "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", 
         "Content-Type": "application/json" 
     };
 
-    // Extract Method (API Gateway format)
+    // GHOST EVENT GUARD: If API Gateway sends an empty object during CORS preflight, return a safe 200 OK
+    if (!e.httpMethod && !e.requestContext && Object.keys(e).length === 0) {
+        return { statusCode: 200, headers: resHeaders, body: '' };
+    }
+
     const method = e.httpMethod || "GET";
 
     if (method === 'OPTIONS') {
         return { statusCode: 200, headers: resHeaders, body: '' };
     }
     
-    // Extract Path (API Gateway format)
     let path = e.path || "/";
     path = path.replace(/^\/(v1|prod|dev|v2)/, ""); 
     path = path.split('?')[0]; 
@@ -123,7 +125,6 @@ exports.handler = async (e) => {
 
         const body = e.body ? JSON.parse(e.body) : {};
 
-        // --- ACCOUNTS ---
         if (path === '/accounts') {
             if (method === 'GET') {
                 const r = await client.query(`SELECT * FROM accounts ORDER BY account_number ASC`);
@@ -136,7 +137,6 @@ exports.handler = async (e) => {
             }
         }
 
-        // --- ALERTS ---
         if (path === '/alerts') {
             if (method === 'GET') {
                 const r = await client.query(`SELECT * FROM account_alerts`);
@@ -164,9 +164,9 @@ exports.handler = async (e) => {
             }
         }
 
-        if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
+if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
             const alertId = path.split('/').pop();
-            await client.query(`UPDATE account_alerts SET is_acknowledged = COALESCE($1, is_acknowledged) WHERE id = $2`, [body.isAcknowledledged, alertId]);
+            await client.query(`UPDATE account_alerts SET is_acknowledged = COALESCE($1, is_acknowledged) WHERE id = $2`, [body.isAcknowledged, alertId]);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
@@ -176,7 +176,6 @@ exports.handler = async (e) => {
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
-        // --- FIELDS ---
         if (path === '/fields') {
             if (method === 'GET') {
                 const r = await client.query(`
@@ -217,7 +216,6 @@ exports.handler = async (e) => {
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: r.rowCount > 0}) };
         }
 
-        // --- LATERALS ---
         if (path === '/laterals') {
             if (method === 'GET') {
                 const r = await client.query(`SELECT * FROM laterals`);
@@ -229,7 +227,6 @@ exports.handler = async (e) => {
             }
         }
 
-        // --- HEADGATES ---
         if (path === '/headgates') {
             if (method === 'GET') {
                 const r = await client.query(`SELECT * FROM headgates`);
@@ -241,7 +238,6 @@ exports.handler = async (e) => {
             }
         }
 
-        // --- WATER BANK ---
         if (path === '/water-bank' && method === 'GET') {
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify([
                 { id: 'WB1', fieldAssociation: 'North Reservoir', amountAvailable: 150.5, lateral: 'Lateral 8.13' },
@@ -253,7 +249,6 @@ exports.handler = async (e) => {
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ success: true }) };
         }
 
-        // --- ORDERS ---
         if (path === '/orders') {
             if (method === 'GET') {
                 const r = await client.query(`SELECT * FROM water_orders ORDER BY delivery_start_date ASC`);
@@ -276,7 +271,6 @@ exports.handler = async (e) => {
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
-        // --- ADMIN ---
         if (path === '/admin/reset-db' && method === 'POST') {
             await client.query(`DROP TABLE IF EXISTS account_alerts, field_headgates, water_orders, headgates, laterals, fields, accounts CASCADE`);
             schemaDone = false; 
