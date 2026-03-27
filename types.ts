@@ -3,13 +3,16 @@ export enum UserRole {
   WaterOffice = 'Water Office',
   DistrictOffice = 'District Office',
   DitchRider = 'Ditch Rider',
+  Farmer = 'farmer', // Added fallback role used by the backend signup
 }
 
 export interface User {
-  id: number;
+  id: number | string; // Updated to allow the 'USR-XXXX' string IDs from Postgres
   name: string;
   role: UserRole;
   email: string;
+  city?: string; // Added for the new Profile page
+  phone?: string; // Added for the new Profile page
   assignedLaterals?: string[];
 }
 

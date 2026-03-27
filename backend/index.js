@@ -68,8 +68,10 @@ async function initSchema(client) {
         await client.query(q);
     }
     
-    // Failsafe: Add name column to existing users table if it was created previously
+    // Failsafe: Add new columns if they don't exist yet
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(255)`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50)`);
     
     schemaDone = true;
 }
@@ -117,7 +119,6 @@ exports.handler = async (e) => {
     path = path.replace(/\/$/, ""); 
     if (path === "") path = "/";
 
-    // --- THE GATEKEEPER ---
     const isAuthRoute = path === '/auth/login' || path === '/auth/signup';
     let currentUser = null;
 
@@ -145,7 +146,6 @@ exports.handler = async (e) => {
 
         const body = e.body ? JSON.parse(e.body) : {};
 
-        // --- AUTHENTICATION ROUTES ---
         if (path === '/auth/signup' && method === 'POST') {
             const { name, email, password, role } = body;
             if (!email || !password) return { statusCode: 400, headers: resHeaders, body: JSON.stringify({ msg: "Email and password required" }) };
@@ -178,13 +178,12 @@ exports.handler = async (e) => {
             if (!isValid) return { statusCode: 401, headers: resHeaders, body: JSON.stringify({ msg: "Invalid credentials" }) };
 
             const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } }) };
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, city: user.city, phone: user.phone } }) };
         }
 
-        // --- USER MANAGEMENT ROUTES (/users) ---
         if (path === '/users') {
             if (method === 'GET') {
-                const r = await client.query(`SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC`);
+                const r = await client.query(`SELECT id, name, email, role, city, phone, created_at FROM users ORDER BY created_at DESC`);
                 return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
             }
             if (method === 'POST') {
@@ -209,10 +208,10 @@ exports.handler = async (e) => {
         if (path.match(/^\/users\/[^/]+$/)) {
             const uId = path.split('/').pop();
             if (method === 'PUT') {
-                const { name, email, role } = body;
+                const { name, email, role, city, phone } = body;
                 await client.query(
-                    `UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role) WHERE id = $4`,
-                    [name, email?.toLowerCase(), role, uId]
+                    `UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role), city = COALESCE($4, city), phone = COALESCE($5, phone) WHERE id = $6`,
+                    [name, email?.toLowerCase(), role, city, phone, uId]
                 );
                 return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ success: true }) };
             }
@@ -310,7 +309,6 @@ exports.handler = async (e) => {
                         [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber, body.primaryAccountNumber, currentUser.userId]
                     );
                     
-                    // Verify ownership before deleting/adding headgates to prevent cross-user pollution
                     const ownershipCheck = await client.query(`SELECT id FROM fields WHERE id = $1 AND user_id = $2`, [body.id, currentUser.userId]);
                     if (ownershipCheck.rows.length > 0 && body.headgateIds && Array.isArray(body.headgateIds)) {
                         await client.query(`DELETE FROM field_headgates WHERE field_id = $1`, [body.id]);
@@ -330,8 +328,6 @@ exports.handler = async (e) => {
 
         if (path.match(/^\/fields\/[^/]+$/) && method === 'DELETE') {
             const fieldId = path.split('/').pop();
-            
-            // Verify ownership before deleting
             const ownershipCheck = await client.query(`SELECT id FROM fields WHERE id = $1 AND user_id = $2`, [fieldId, currentUser.userId]);
             if (ownershipCheck.rows.length === 0) return { statusCode: 403, headers: resHeaders, body: JSON.stringify({ msg: "Forbidden: Field not found or access denied" }) };
 
@@ -391,7 +387,6 @@ exports.handler = async (e) => {
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
-        // --- ADMIN (Superuser Only) ---
         if (path === '/admin/reset-db' && method === 'POST') {
             if (currentUser.role !== 'superuser') {
                 return { statusCode: 403, headers: resHeaders, body: JSON.stringify({ msg: "Forbidden: You do not have permission to reset the database." }) };

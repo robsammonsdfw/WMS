@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { UserRole, User } from '../types';
+import { User } from '../types';
 import { WaterDropIcon, BellIcon, UserGroupIcon, ChevronDownIcon } from './icons';
 
-const Header: React.FC = () => {
+interface HeaderProps {
+  onProfileClick: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ onProfileClick }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [activeUserName, setActiveUserName] = useState<string>('Guest');
+  const [activeUserName, setActiveUserName] = useState<string>('Loading...');
   const [activeUserRole, setActiveUserRole] = useState<string>('');
 
   useEffect(() => {
-    // Read the user directly from local storage where api.ts saves it during login
     const storedUser = localStorage.getItem('wms_user');
     if (storedUser) {
       try {
         const user: User = JSON.parse(storedUser);
-        // Fallback to email if name hasn't been set in the DB yet
-        setActiveUserName(user.name || user.email || 'User');
+        const emailPrefix = user.email ? user.email.split('@')[0] : 'User';
+        setActiveUserName(user.name || emailPrefix);
         setActiveUserRole(user.role || '');
       } catch (e) {
         console.error('Failed to parse user from local storage');
@@ -23,10 +26,15 @@ const Header: React.FC = () => {
   }, []);
 
   const handleSignOut = () => {
-    // Clear your custom JWT tokens to lock down the app
     localStorage.removeItem('wms_token');
     localStorage.removeItem('wms_user');
     window.location.reload(); 
+  };
+
+  const handleProfileNav = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setDropdownOpen(false);
+    onProfileClick();
   };
 
   return (
@@ -56,9 +64,12 @@ const Header: React.FC = () => {
               {dropdownOpen && (
                 <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
                   <div className="py-1" role="menu">
-                    <a href="#profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                    <button
+                      onClick={handleProfileNav}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
                       Your Profile
-                    </a>
+                    </button>
                     <button
                       onClick={handleSignOut}
                       className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"

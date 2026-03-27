@@ -5,29 +5,31 @@ import WaterManagerDashboard from './dashboards/WaterManagerDashboard';
 import WaterOfficeDashboard from './dashboards/WaterOfficeDashboard';
 import DitchRiderDashboard from './dashboards/DitchRiderDashboard';
 import AuthScreen from './components/AuthScreen';
+import UserProfile from './components/UserProfile';
 import { getWaterOrders, getFields } from './services/api';
 
 const App: React.FC = () => {
-  // 1. Authentication State
   const [token, setToken] = useState<string | null>(localStorage.getItem('wms_token'));
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('wms_user');
     return saved ? JSON.parse(saved) : null;
   });
+  
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'profile'>('dashboard');
 
-  // 2. App Data State
   const [waterOrders, setWaterOrders] = useState<WaterOrder[]>([]);
   const [fields, setFields] = useState<Field[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 3. Auth Handlers
   const handleAuthSuccess = (userData: any, authToken: string) => {
     const mappedUser: User = {
-      id: userData.id as any,
-      name: userData.email.split('@')[0], 
+      id: userData.id,
+      name: userData.name, 
       role: userData.role as UserRole,
-      email: userData.email
+      email: userData.email,
+      city: userData.city,
+      phone: userData.phone
     };
     
     localStorage.setItem('wms_token', authToken);
@@ -36,16 +38,6 @@ const App: React.FC = () => {
     setCurrentUser(mappedUser);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('wms_token');
-    localStorage.removeItem('wms_user');
-    setToken(null);
-    setCurrentUser(null);
-    setWaterOrders([]);
-    setFields([]);
-  };
-
-  // 4. Data Fetching (Only runs if authenticated)
   const fetchData = async () => {
     if (!token) return;
     try {
@@ -84,51 +76,51 @@ const App: React.FC = () => {
       }
   };
 
-// 5. BUILD DASHBOARD BEFORE THE GATEKEEPER (Fixes Hook Crash)
-const DashboardComponent = useMemo(() => {
-  if (!currentUser) return null; // Safeguard
+  const DashboardComponent = useMemo(() => {
+    if (!currentUser) return null;
 
-  if (isLoading) {
-      return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest mt-10">Loading secure environment...</div>;
-  }
-  if (error) {
-      return <div className="p-8 text-center text-red-600 bg-red-50 rounded-md font-bold uppercase mx-10 mt-10">{error}</div>;
+    if (isLoading) {
+        return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest mt-10">Loading secure environment...</div>;
+    }
+    if (error) {
+        return <div className="p-8 text-center text-red-600 bg-red-50 rounded-md font-bold uppercase mx-10 mt-10">{error}</div>;
+    }
+
+    switch (currentUser.role) {
+      case UserRole.WaterManager:
+      case 'farmer' as any: 
+        return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
+      case UserRole.WaterOffice:
+        return <WaterOfficeDashboard waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
+      case UserRole.DitchRider:
+        return <DitchRiderDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
+      default:
+        return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
+    }
+  }, [currentUser, waterOrders, fields, isLoading, error]);
+
+  if (!token || !currentUser) {
+    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
   }
 
-  switch (currentUser.role) {
-    case UserRole.WaterManager:
-    case 'farmer' as any: // Fallback just in case
-      return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
-    case UserRole.WaterOffice:
-      return <WaterOfficeDashboard waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
-    case UserRole.DitchRider:
-      return <DitchRiderDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
-    default:
-      // Default to Water Manager for safety
-      return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
-  }
-}, [currentUser, waterOrders, fields, isLoading, error]);
-
-// 6. The Gatekeeper: If no token or user, show Login Screen
-if (!token || !currentUser) {
-  return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
-}
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
-    <Header />
+      <Header onProfileClick={() => setActiveTab('profile')} />
       
-      {/* Temporary Logout Button injected just below the header for easy access during dev */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 mt-4 flex justify-end">
-        <button 
-            onClick={handleLogout} 
-            className="text-[10px] font-black text-gray-400 hover:text-red-500 uppercase tracking-widest transition-colors"
-        >
-            Log Out Secure Session
-        </button>
-      </div>
-
       <main className="p-4 sm:p-6 lg:p-8">
-        {DashboardComponent}
+        {activeTab === 'profile' ? (
+          <UserProfile 
+            user={currentUser} 
+            onUpdateUser={(updatedUser) => {
+              setCurrentUser(updatedUser);
+              // Force Header to refresh its local storage read
+              window.dispatchEvent(new Event('storage')); 
+            }}
+            onClose={() => setActiveTab('dashboard')} 
+          />
+        ) : (
+          DashboardComponent
+        )}
       </main>
     </div>
   );
