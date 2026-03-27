@@ -1,4 +1,4 @@
-import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount, AccountAlert } from '../types';
+import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount, AccountAlert, User } from '../types';
 
 const getBaseUrl = () => {
   let url = (window as any).APP_CONFIG?.API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
@@ -82,9 +82,13 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     }
 };
 
-// --- AUTHENTICATION ---
+// --- AUTHENTICATION & USERS ---
 export const login = (data: any): Promise<any> => apiFetch('/auth/login', { method: 'POST', body: JSON.stringify(data) });
 export const signup = (data: any): Promise<any> => apiFetch('/auth/signup', { method: 'POST', body: JSON.stringify(data) });
+export const getUsers = (): Promise<User[]> => apiFetch('/users');
+export const createUser = (data: Partial<User>): Promise<User> => apiFetch('/users', { method: 'POST', body: JSON.stringify(data) });
+export const updateUser = (id: string | number, data: Partial<User>): Promise<any> => apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteUser = (id: string | number): Promise<any> => apiFetch(`/users/${id}`, { method: 'DELETE' });
 
 // --- CORE DATA ---
 export const getWaterOrders = (): Promise<WaterOrder[]> => apiFetch('/orders');

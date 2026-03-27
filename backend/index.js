@@ -11,7 +11,7 @@ async function initSchema(client) {
     if (schemaDone) return;
     
     const queries = [
-        `CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, email VARCHAR(255) UNIQUE NOT NULL, password_hash VARCHAR(255) NOT NULL, role VARCHAR(50) DEFAULT 'farmer', created_at TIMESTAMP DEFAULT NOW())`,
+        `CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), email VARCHAR(255) UNIQUE NOT NULL, password_hash VARCHAR(255) NOT NULL, role VARCHAR(50) DEFAULT 'farmer', created_at TIMESTAMP DEFAULT NOW())`,
         `CREATE TABLE IF NOT EXISTS laterals (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS headgates (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, lateral_id VARCHAR(255) REFERENCES laterals(id), tap_number VARCHAR(50))`,
         `CREATE TABLE IF NOT EXISTS accounts (account_number VARCHAR(255) PRIMARY KEY, owner_name VARCHAR(255), total_allotment NUMERIC DEFAULT 0, user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE)`,
@@ -67,6 +67,10 @@ async function initSchema(client) {
     for (const q of queries) {
         await client.query(q);
     }
+    
+    // Failsafe: Add name column to existing users table if it was created previously
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)`);
+    
     schemaDone = true;
 }
 
@@ -143,7 +147,7 @@ exports.handler = async (e) => {
 
         // --- AUTHENTICATION ROUTES ---
         if (path === '/auth/signup' && method === 'POST') {
-            const { email, password, role } = body;
+            const { name, email, password, role } = body;
             if (!email || !password) return { statusCode: 400, headers: resHeaders, body: JSON.stringify({ msg: "Email and password required" }) };
 
             const existing = await client.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
@@ -154,12 +158,12 @@ exports.handler = async (e) => {
             const userRole = role || 'farmer';
 
             await client.query(
-                'INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, $4)',
-                [userId, email.toLowerCase(), hashedPw, userRole]
+                'INSERT INTO users (id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5)',
+                [userId, name, email.toLowerCase(), hashedPw, userRole]
             );
 
             const token = jwt.sign({ userId, role: userRole }, JWT_SECRET, { expiresIn: '24h' });
-            return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ token, user: { id: userId, email, role: userRole } }) };
+            return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ token, user: { id: userId, name, email, role: userRole } }) };
         }
 
         if (path === '/auth/login' && method === 'POST') {
@@ -174,7 +178,48 @@ exports.handler = async (e) => {
             if (!isValid) return { statusCode: 401, headers: resHeaders, body: JSON.stringify({ msg: "Invalid credentials" }) };
 
             const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ token, user: { id: user.id, email: user.email, role: user.role } }) };
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } }) };
+        }
+
+        // --- USER MANAGEMENT ROUTES (/users) ---
+        if (path === '/users') {
+            if (method === 'GET') {
+                const r = await client.query(`SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC`);
+                return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
+            }
+            if (method === 'POST') {
+                const { name, email, password, role } = body;
+                if (!email || !password) return { statusCode: 400, headers: resHeaders, body: JSON.stringify({ msg: "Email and password required" }) };
+
+                const existing = await client.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+                if (existing.rows.length > 0) return { statusCode: 400, headers: resHeaders, body: JSON.stringify({ msg: "Email already in use" }) };
+
+                const userId = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+                const hashedPw = bcrypt.hashSync(password, 10);
+                const userRole = role || 'farmer';
+
+                await client.query(
+                    'INSERT INTO users (id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5)',
+                    [userId, name, email.toLowerCase(), hashedPw, userRole]
+                );
+                return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ id: userId, name, email, role: userRole }) };
+            }
+        }
+
+        if (path.match(/^\/users\/[^/]+$/)) {
+            const uId = path.split('/').pop();
+            if (method === 'PUT') {
+                const { name, email, role } = body;
+                await client.query(
+                    `UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), role = COALESCE($3, role) WHERE id = $4`,
+                    [name, email?.toLowerCase(), role, uId]
+                );
+                return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ success: true }) };
+            }
+            if (method === 'DELETE') {
+                await client.query(`DELETE FROM users WHERE id = $1`, [uId]);
+                return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ success: true }) };
+            }
         }
 
         // --- SILOED ACCOUNTS ---
