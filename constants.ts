@@ -2,11 +2,10 @@
 import { User, UserRole } from './types';
 
 export const USERS: User[] = [
-  { id: 1, name: 'Mike Beus', role: UserRole.WaterManager },
-  { id: 2, name: 'Central Office', role: UserRole.WaterOffice },
-  { id: 4, name: 'John Smith', role: UserRole.DitchRider, assignedLaterals: ['Lateral A', 'Lateral 8.13'] },
+  { id: 1, name: 'Mike Beus', role: UserRole.WaterManager, email: 'mike@example.com' },
+  { id: 2, name: 'Central Office', role: UserRole.WaterOffice, email: 'office@example.com' },
+  { id: 4, name: 'John Smith', role: UserRole.DitchRider, assignedLaterals: ['Lateral A', 'Lateral 8.13'], email: 'john@example.com' },
 ];
-
 export const FIELDS: [] = []; // Data will be fetched from the database
 export const WATER_ORDERS: [] = []; // Data will be fetched from the database
 

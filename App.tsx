@@ -113,11 +113,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
-      <Header
-        currentUser={currentUser}
-        users={[currentUser]} // We fake the users list for now so the header doesn't crash
-        onUserChange={() => {}} // Ignore changes, locked to current user
-      />
+    <Header />
       
       {/* Temporary Logout Button injected just below the header for easy access during dev */}
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 mt-4 flex justify-end">
