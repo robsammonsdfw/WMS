@@ -84,33 +84,35 @@ const App: React.FC = () => {
       }
   };
 
-  // 5. The Gatekeeper: If no token or user, show Login Screen
-  if (!token || !currentUser) {
-    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
+// 5. BUILD DASHBOARD BEFORE THE GATEKEEPER (Fixes Hook Crash)
+const DashboardComponent = useMemo(() => {
+  if (!currentUser) return null; // Safeguard
+
+  if (isLoading) {
+      return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest mt-10">Loading secure environment...</div>;
+  }
+  if (error) {
+      return <div className="p-8 text-center text-red-600 bg-red-50 rounded-md font-bold uppercase mx-10 mt-10">{error}</div>;
   }
 
-  const DashboardComponent = useMemo(() => {
-    if (isLoading) {
-        return <div className="p-8 text-center text-gray-500 font-bold uppercase tracking-widest mt-10">Loading secure environment...</div>;
-    }
-    if (error) {
-        return <div className="p-8 text-center text-red-600 bg-red-50 rounded-md font-bold uppercase mx-10 mt-10">{error}</div>;
-    }
+  switch (currentUser.role) {
+    case UserRole.WaterManager:
+    case 'farmer' as any: // Fallback just in case
+      return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
+    case UserRole.WaterOffice:
+      return <WaterOfficeDashboard waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
+    case UserRole.DitchRider:
+      return <DitchRiderDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
+    default:
+      // Default to Water Manager for safety
+      return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
+  }
+}, [currentUser, waterOrders, fields, isLoading, error]);
 
-    switch (currentUser.role) {
-      case UserRole.WaterManager:
-      case 'farmer' as UserRole: // Fallback just in case
-        return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
-      case UserRole.WaterOffice:
-        return <WaterOfficeDashboard waterOrders={waterOrders} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
-      case UserRole.DitchRider:
-        return <DitchRiderDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} />;
-      default:
-        // Default to Water Manager for safety
-        return <WaterManagerDashboard user={currentUser} waterOrders={waterOrders} fields={fields} refreshWaterOrders={refreshWaterOrders} refreshFields={refreshFields} />;
-    }
-  }, [currentUser, waterOrders, fields, isLoading, error]);
-
+// 6. The Gatekeeper: If no token or user, show Login Screen
+if (!token || !currentUser) {
+  return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
+}
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
     <Header />
