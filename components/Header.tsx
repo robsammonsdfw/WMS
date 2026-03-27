@@ -1,40 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { getCurrentUser, fetchUserAttributes, signOut } from 'aws-amplify/auth';
-import { UserRole } from '../types';
+import { UserRole, User } from '../types';
 import { WaterDropIcon, BellIcon, UserGroupIcon, ChevronDownIcon } from './icons';
 
 const Header: React.FC = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [activeUserName, setActiveUserName] = useState<string>('Loading...');
-  const [activeUserRole, setActiveUserRole] = useState<string>('Loading...');
+  const [activeUserName, setActiveUserName] = useState<string>('Guest');
+  const [activeUserRole, setActiveUserRole] = useState<string>('');
 
   useEffect(() => {
-    async function loadActiveUser() {
+    // Read the user directly from local storage where api.ts saves it during login
+    const storedUser = localStorage.getItem('wms_user');
+    if (storedUser) {
       try {
-        const currentUser = await getCurrentUser();
-        const attributes = await fetchUserAttributes();
-        
-        setActiveUserName(attributes.name || currentUser.username);
-        // Fallback to WaterManager until roles are synced with your Cognito/DB
-        setActiveUserRole(attributes['custom:role'] || UserRole.WaterManager); 
-      } catch (error) {
-        console.error("No active session found.");
-        setActiveUserName('Guest');
-        setActiveUserRole('');
+        const user: User = JSON.parse(storedUser);
+        // Fallback to email if name hasn't been set in the DB yet
+        setActiveUserName(user.name || user.email || 'User');
+        setActiveUserRole(user.role || '');
+      } catch (e) {
+        console.error('Failed to parse user from local storage');
       }
     }
-
-    loadActiveUser();
   }, []);
 
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-      // Forces the app to reload, clearing memory state and triggering the login screen
-      window.location.reload(); 
-    } catch (error) {
-      console.error('Error signing out: ', error);
-    }
+  const handleSignOut = () => {
+    // Clear your custom JWT tokens to lock down the app
+    localStorage.removeItem('wms_token');
+    localStorage.removeItem('wms_user');
+    window.location.reload(); 
   };
 
   return (
@@ -63,18 +55,13 @@ const Header: React.FC = () => {
               </button>
               {dropdownOpen && (
                 <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
-                  <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                    <a
-                      href="#profile"
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                      role="menuitem"
-                    >
+                  <div className="py-1" role="menu">
+                    <a href="#profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                       Your Profile
                     </a>
                     <button
                       onClick={handleSignOut}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                      role="menuitem"
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     >
                       Sign Out
                     </button>
