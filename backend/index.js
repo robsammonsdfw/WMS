@@ -1,14 +1,20 @@
 const pg = require("pg");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
 let pool = null;
 let schemaDone = false;
+
+const JWT_SECRET = process.env.JWT_SECRET || "development-fallback-secret-key";
 
 async function initSchema(client) {
     if (schemaDone) return;
     
     const queries = [
+        `CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, email VARCHAR(255) UNIQUE NOT NULL, password_hash VARCHAR(255) NOT NULL, role VARCHAR(50) DEFAULT 'farmer', created_at TIMESTAMP DEFAULT NOW())`,
         `CREATE TABLE IF NOT EXISTS laterals (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS headgates (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, lateral_id VARCHAR(255) REFERENCES laterals(id), tap_number VARCHAR(50))`,
-        `CREATE TABLE IF NOT EXISTS accounts (account_number VARCHAR(255) PRIMARY KEY, owner_name VARCHAR(255), total_allotment NUMERIC DEFAULT 0)`,
+        `CREATE TABLE IF NOT EXISTS accounts (account_number VARCHAR(255) PRIMARY KEY, owner_name VARCHAR(255), total_allotment NUMERIC DEFAULT 0, user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE)`,
         `CREATE TABLE IF NOT EXISTS fields (
             id VARCHAR(255) PRIMARY KEY, 
             name VARCHAR(255), 
@@ -27,7 +33,8 @@ async function initSchema(client) {
             allotment_used NUMERIC DEFAULT 0, 
             "lateral" VARCHAR(255), 
             tap_number VARCHAR(255),
-            primary_account_number VARCHAR(255)
+            primary_account_number VARCHAR(255),
+            user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE
         )`,
         `CREATE TABLE IF NOT EXISTS field_headgates (field_id VARCHAR(255) REFERENCES fields(id) ON DELETE CASCADE, headgate_id VARCHAR(255) REFERENCES headgates(id) ON DELETE CASCADE, PRIMARY KEY (field_id, headgate_id))`,
         `CREATE TABLE IF NOT EXISTS water_orders (
@@ -44,31 +51,22 @@ async function initSchema(client) {
             lateral_id VARCHAR(255), 
             headgate_id VARCHAR(255), 
             tap_number VARCHAR(50),
-            account_number VARCHAR(255)
+            account_number VARCHAR(255),
+            user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE
         )`,
         `CREATE TABLE IF NOT EXISTS account_alerts (
             id VARCHAR(255) PRIMARY KEY,
             account_number VARCHAR(255),
             alert_type VARCHAR(50),
             threshold_percent NUMERIC,
-            is_acknowledged BOOLEAN DEFAULT FALSE
+            is_acknowledged BOOLEAN DEFAULT FALSE,
+            user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE
         )`
     ];
 
     for (const q of queries) {
         await client.query(q);
     }
-
-    try {
-        await client.query(`ALTER TABLE water_orders ADD COLUMN IF NOT EXISTS delivery_end_date DATE`);
-        await client.query(`ALTER TABLE water_orders ADD COLUMN IF NOT EXISTS account_number VARCHAR(255)`);
-        await client.query(`ALTER TABLE fields ADD COLUMN IF NOT EXISTS primary_account_number VARCHAR(255)`);
-        await client.query(`ALTER TABLE water_orders DROP CONSTRAINT IF EXISTS water_orders_lateral_id_fkey`);
-        await client.query(`ALTER TABLE water_orders DROP CONSTRAINT IF EXISTS water_orders_headgate_id_fkey`);
-    } catch (e) {
-        console.log("Migration warning:", e.message);
-    }
-
     schemaDone = true;
 }
 
@@ -99,7 +97,6 @@ exports.handler = async (e) => {
         "Content-Type": "application/json" 
     };
 
-    // GHOST EVENT GUARD: If API Gateway sends an empty object during CORS preflight, return a safe 200 OK
     if (!e.httpMethod && !e.requestContext && Object.keys(e).length === 0) {
         return { statusCode: 200, headers: resHeaders, body: '' };
     }
@@ -116,6 +113,25 @@ exports.handler = async (e) => {
     path = path.replace(/\/$/, ""); 
     if (path === "") path = "/";
 
+    // --- THE GATEKEEPER ---
+    const isAuthRoute = path === '/auth/login' || path === '/auth/signup';
+    let currentUser = null;
+
+    if (method !== 'OPTIONS' && !isAuthRoute) {
+        const authHeader = e.headers?.authorization || e.headers?.Authorization;
+        
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return { statusCode: 401, headers: resHeaders, body: JSON.stringify({ msg: "Unauthorized: Missing token" }) };
+        }
+
+        const token = authHeader.split(' ')[1];
+        try {
+            currentUser = jwt.verify(token, JWT_SECRET);
+        } catch (err) {
+            return { statusCode: 401, headers: resHeaders, body: JSON.stringify({ msg: "Unauthorized: Invalid or expired token" }) };
+        }
+    }
+
     let client;
     try {
         const dbPool = await getPool();
@@ -125,26 +141,69 @@ exports.handler = async (e) => {
 
         const body = e.body ? JSON.parse(e.body) : {};
 
+        // --- AUTHENTICATION ROUTES ---
+        if (path === '/auth/signup' && method === 'POST') {
+            const { email, password, role } = body;
+            if (!email || !password) return { statusCode: 400, headers: resHeaders, body: JSON.stringify({ msg: "Email and password required" }) };
+
+            const existing = await client.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+            if (existing.rows.length > 0) return { statusCode: 400, headers: resHeaders, body: JSON.stringify({ msg: "Email already in use" }) };
+
+            const userId = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+            const hashedPw = bcrypt.hashSync(password, 10);
+            const userRole = role || 'farmer';
+
+            await client.query(
+                'INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, $4)',
+                [userId, email.toLowerCase(), hashedPw, userRole]
+            );
+
+            const token = jwt.sign({ userId, role: userRole }, JWT_SECRET, { expiresIn: '24h' });
+            return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ token, user: { id: userId, email, role: userRole } }) };
+        }
+
+        if (path === '/auth/login' && method === 'POST') {
+            const { email, password } = body;
+            if (!email || !password) return { statusCode: 400, headers: resHeaders, body: JSON.stringify({ msg: "Email and password required" }) };
+
+            const result = await client.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+            if (result.rows.length === 0) return { statusCode: 401, headers: resHeaders, body: JSON.stringify({ msg: "Invalid credentials" }) };
+
+            const user = result.rows[0];
+            const isValid = bcrypt.compareSync(password, user.password_hash);
+            if (!isValid) return { statusCode: 401, headers: resHeaders, body: JSON.stringify({ msg: "Invalid credentials" }) };
+
+            const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ token, user: { id: user.id, email: user.email, role: user.role } }) };
+        }
+
+        // --- SILOED ACCOUNTS ---
         if (path === '/accounts') {
             if (method === 'GET') {
-                const r = await client.query(`SELECT * FROM accounts ORDER BY account_number ASC`);
+                const r = await client.query(`SELECT * FROM accounts WHERE user_id = $1 ORDER BY account_number ASC`, [currentUser.userId]);
                 return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
             }
             if (method === 'POST') {
-                await client.query(`INSERT INTO accounts (account_number, owner_name, total_allotment) VALUES ($1, $2, $3) ON CONFLICT (account_number) DO UPDATE SET owner_name = EXCLUDED.owner_name, total_allotment = EXCLUDED.total_allotment`, 
-                [body.accountNumber, body.ownerName, body.totalAllotment]);
+                await client.query(
+                    `INSERT INTO accounts (account_number, owner_name, total_allotment, user_id) VALUES ($1, $2, $3, $4) 
+                     ON CONFLICT (account_number) DO UPDATE SET owner_name = EXCLUDED.owner_name, total_allotment = EXCLUDED.total_allotment 
+                     WHERE accounts.user_id = EXCLUDED.user_id`, 
+                    [body.accountNumber, body.ownerName, body.totalAllotment, currentUser.userId]
+                );
                 return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
             }
         }
+
         if (path.match(/^\/accounts\/[^/]+$/) && method === 'DELETE') {
             const accNum = path.split('/').pop();
-            await client.query(`DELETE FROM accounts WHERE account_number = $1`, [accNum]);
+            await client.query(`DELETE FROM accounts WHERE account_number = $1 AND user_id = $2`, [accNum, currentUser.userId]);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
+        // --- SILOED ALERTS ---
         if (path === '/alerts') {
             if (method === 'GET') {
-                const r = await client.query(`SELECT * FROM account_alerts`);
+                const r = await client.query(`SELECT * FROM account_alerts WHERE user_id = $1`, [currentUser.userId]);
                 return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
             }
             if (method === 'POST') {
@@ -154,10 +213,11 @@ exports.handler = async (e) => {
                     for (const alert of alerts) {
                         const id = alert.id || 'ALT-' + Math.random().toString(36).substr(2, 5).toUpperCase();
                         await client.query(
-                            `INSERT INTO account_alerts (id, account_number, alert_type, threshold_percent, is_acknowledged) 
-                             VALUES ($1, $2, $3, $4, false) 
-                             ON CONFLICT (id) DO UPDATE SET alert_type = EXCLUDED.alert_type, threshold_percent = EXCLUDED.threshold_percent, is_acknowledged = false`,
-                            [id, alert.accountNumber, alert.alertType, alert.thresholdPercent]
+                            `INSERT INTO account_alerts (id, account_number, alert_type, threshold_percent, is_acknowledged, user_id) 
+                             VALUES ($1, $2, $3, $4, false, $5) 
+                             ON CONFLICT (id) DO UPDATE SET alert_type = EXCLUDED.alert_type, threshold_percent = EXCLUDED.threshold_percent, is_acknowledged = false 
+                             WHERE account_alerts.user_id = EXCLUDED.user_id`,
+                            [id, alert.accountNumber, alert.alertType, alert.thresholdPercent, currentUser.userId]
                         );
                     }
                     await client.query('COMMIT');
@@ -169,18 +229,19 @@ exports.handler = async (e) => {
             }
         }
 
-if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
+        if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
             const alertId = path.split('/').pop();
-            await client.query(`UPDATE account_alerts SET is_acknowledged = COALESCE($1, is_acknowledged) WHERE id = $2`, [body.isAcknowledged, alertId]);
+            await client.query(`UPDATE account_alerts SET is_acknowledged = COALESCE($1, is_acknowledged) WHERE id = $2 AND user_id = $3`, [body.isAcknowledged, alertId, currentUser.userId]);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
         if (path.match(/^\/alerts\/[^/]+$/) && method === 'DELETE') {
             const alertId = path.split('/').pop();
-            await client.query(`DELETE FROM account_alerts WHERE id = $1`, [alertId]);
+            await client.query(`DELETE FROM account_alerts WHERE id = $1 AND user_id = $2`, [alertId, currentUser.userId]);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
+        // --- SILOED FIELDS ---
         if (path === '/fields') {
             if (method === 'GET') {
                 const r = await client.query(`
@@ -188,22 +249,31 @@ if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
                     array_remove(array_agg(DISTINCT fh.headgate_id), NULL) as hg_ids 
                     FROM fields f 
                     LEFT JOIN field_headgates fh ON f.id = fh.field_id 
+                    WHERE f.user_id = $1
                     GROUP BY f.id
-                `);
+                `, [currentUser.userId]);
                 return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows.map(row => ({...row, headgateIds: row.hg_ids || []}))) };
             }
             if (method === 'POST') {
                 await client.query('BEGIN');
                 try {
-                    await client.query(`INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, "lateral", tap_number, primary_account_number) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, $15) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, company_name=EXCLUDED.company_name, address=EXCLUDED.address, phone=EXCLUDED.phone, crop=EXCLUDED.crop, acres=EXCLUDED.acres, total_water_allocation=EXCLUDED.total_water_allocation, water_allotment=EXCLUDED.water_allotment, lat=EXCLUDED.lat, lng=EXCLUDED.lng, owner=EXCLUDED.owner, "lateral"=EXCLUDED."lateral", tap_number=EXCLUDED.tap_number, primary_account_number=EXCLUDED.primary_account_number`, 
-                    [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber, body.primaryAccountNumber]);
+                    await client.query(
+                        `INSERT INTO fields (id, name, company_name, address, phone, crop, acres, total_water_allocation, water_allotment, lat, lng, owner, "lateral", tap_number, primary_account_number, user_id) 
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) 
+                         ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, company_name=EXCLUDED.company_name, address=EXCLUDED.address, phone=EXCLUDED.phone, crop=EXCLUDED.crop, acres=EXCLUDED.acres, total_water_allocation=EXCLUDED.total_water_allocation, water_allotment=EXCLUDED.water_allotment, lat=EXCLUDED.lat, lng=EXCLUDED.lng, owner=EXCLUDED.owner, "lateral"=EXCLUDED."lateral", tap_number=EXCLUDED.tap_number, primary_account_number=EXCLUDED.primary_account_number 
+                         WHERE fields.user_id = EXCLUDED.user_id`, 
+                        [body.id, body.name, body.companyName, body.address, body.phone, body.crop, body.acres, body.totalWaterAllocation, body.waterAllotment, body.lat, body.lng, body.owner, body.lateral, body.tapNumber, body.primaryAccountNumber, currentUser.userId]
+                    );
                     
-                    if (body.headgateIds && Array.isArray(body.headgateIds)) {
+                    // Verify ownership before deleting/adding headgates to prevent cross-user pollution
+                    const ownershipCheck = await client.query(`SELECT id FROM fields WHERE id = $1 AND user_id = $2`, [body.id, currentUser.userId]);
+                    if (ownershipCheck.rows.length > 0 && body.headgateIds && Array.isArray(body.headgateIds)) {
                         await client.query(`DELETE FROM field_headgates WHERE field_id = $1`, [body.id]);
                         for (const hgId of body.headgateIds) {
                             await client.query(`INSERT INTO field_headgates (field_id, headgate_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [body.id, hgId]);
                         }
                     }
+                    
                     await client.query('COMMIT');
                     return { statusCode: 201, headers: resHeaders, body: JSON.stringify({success: true}) };
                 } catch (err) {
@@ -215,12 +285,18 @@ if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
 
         if (path.match(/^\/fields\/[^/]+$/) && method === 'DELETE') {
             const fieldId = path.split('/').pop();
-            await client.query(`DELETE FROM water_orders WHERE field_id = $1`, [fieldId]);
+            
+            // Verify ownership before deleting
+            const ownershipCheck = await client.query(`SELECT id FROM fields WHERE id = $1 AND user_id = $2`, [fieldId, currentUser.userId]);
+            if (ownershipCheck.rows.length === 0) return { statusCode: 403, headers: resHeaders, body: JSON.stringify({ msg: "Forbidden: Field not found or access denied" }) };
+
+            await client.query(`DELETE FROM water_orders WHERE field_id = $1 AND user_id = $2`, [fieldId, currentUser.userId]);
             await client.query(`DELETE FROM field_headgates WHERE field_id = $1`, [fieldId]);
-            const r = await client.query(`DELETE FROM fields WHERE id = $1`, [fieldId]);
+            const r = await client.query(`DELETE FROM fields WHERE id = $1 AND user_id = $2`, [fieldId, currentUser.userId]);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: r.rowCount > 0}) };
         }
 
+        // --- SYSTEM-WIDE INFRASTRUCTURE (Shared by all users) ---
         if (path === '/laterals') {
             if (method === 'GET') {
                 const r = await client.query(`SELECT * FROM laterals`);
@@ -243,26 +319,19 @@ if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
             }
         }
 
-        if (path === '/water-bank' && method === 'GET') {
-            return { statusCode: 200, headers: resHeaders, body: JSON.stringify([
-                { id: 'WB1', fieldAssociation: 'North Reservoir', amountAvailable: 150.5, lateral: 'Lateral 8.13' },
-                { id: 'WB2', fieldAssociation: 'Community Pool', amountAvailable: 45.0, lateral: 'Lateral A' }
-            ])};
-        }
-
-        if (path.match(/^\/fields\/[^/]+\/queue$/) && method === 'PUT') {
-            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({ success: true }) };
-        }
-
+        // --- SILOED ORDERS ---
         if (path === '/orders') {
             if (method === 'GET') {
-                const r = await client.query(`SELECT * FROM water_orders ORDER BY delivery_start_date ASC`);
+                const r = await client.query(`SELECT * FROM water_orders WHERE user_id = $1 ORDER BY delivery_start_date ASC`, [currentUser.userId]);
                 return { statusCode: 200, headers: resHeaders, body: JSON.stringify(r.rows) };
             }
             if (method === 'POST') {
                 const id = 'ORD-' + Math.random().toString(36).substr(2, 5).toUpperCase();
-                await client.query(`INSERT INTO water_orders (id, field_id, field_name, requester, status, order_type, requested_amount, delivery_start_date, lateral_id, headgate_id, tap_number, delivery_end_date, account_number) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, 
-                [id, body.fieldId, body.fieldName, body.requester, body.status, body.orderType, body.requestedAmount, body.deliveryStartDate, body.lateralId||null, body.headgateId||null, body.tapNumber, body.deliveryEndDate || null, body.accountNumber || null]);
+                await client.query(
+                    `INSERT INTO water_orders (id, field_id, field_name, requester, status, order_type, requested_amount, delivery_start_date, lateral_id, headgate_id, tap_number, delivery_end_date, account_number, user_id) 
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, 
+                    [id, body.fieldId, body.fieldName, body.requester, body.status, body.orderType, body.requestedAmount, body.deliveryStartDate, body.lateralId||null, body.headgateId||null, body.tapNumber, body.deliveryEndDate || null, body.accountNumber || null, currentUser.userId]
+                );
                 return { statusCode: 201, headers: resHeaders, body: JSON.stringify({id}) };
             }
         }
@@ -270,14 +339,19 @@ if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
         if (path.match(/^\/orders\/[^/]+$/) && method === 'PUT') {
             const oid = path.split('/').pop();
             await client.query(
-                `UPDATE water_orders SET status = COALESCE($1, status), delivery_end_date = COALESCE($2, delivery_end_date), delivery_start_date = COALESCE($3, delivery_start_date), account_number = COALESCE($4, account_number) WHERE id = $5`, 
-                [body.status, body.deliveryEndDate, body.deliveryStartDate, body.accountNumber, oid]
+                `UPDATE water_orders SET status = COALESCE($1, status), delivery_end_date = COALESCE($2, delivery_end_date), delivery_start_date = COALESCE($3, delivery_start_date), account_number = COALESCE($4, account_number) 
+                 WHERE id = $5 AND user_id = $6`, 
+                [body.status, body.deliveryEndDate, body.deliveryStartDate, body.accountNumber, oid, currentUser.userId]
             );
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
+        // --- ADMIN (Superuser Only) ---
         if (path === '/admin/reset-db' && method === 'POST') {
-            await client.query(`DROP TABLE IF EXISTS account_alerts, field_headgates, water_orders, headgates, laterals, fields, accounts CASCADE`);
+            if (currentUser.role !== 'superuser') {
+                return { statusCode: 403, headers: resHeaders, body: JSON.stringify({ msg: "Forbidden: You do not have permission to reset the database." }) };
+            }
+            await client.query(`DROP TABLE IF EXISTS account_alerts, field_headgates, water_orders, headgates, laterals, fields, accounts, users CASCADE`);
             schemaDone = false; 
             await initSchema(client);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({msg: "Reset Complete"}) };

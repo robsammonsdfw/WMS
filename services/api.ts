@@ -1,7 +1,6 @@
 import { WaterOrder, Field, WaterBankEntry, Lateral, Headgate, WaterAccount, AccountAlert } from '../types';
 
 const getBaseUrl = () => {
-  // Reverted to your original APP_CONFIG logic, pointing to your East Coast API Gateway
   let url = (window as any).APP_CONFIG?.API_BASE_URL || 'https://e6msras3ml.execute-api.us-east-1.amazonaws.com/v1';
   if (url.endsWith('/')) url = url.slice(0, -1);
   return url;
@@ -9,7 +8,9 @@ const getBaseUrl = () => {
 
 const getApiKey = () => (window as any).APP_CONFIG?.API_KEY || '';
 
-// Fields that should always be converted to numbers
+// Retrieve the token from local storage
+const getToken = () => localStorage.getItem('wms_token') || '';
+
 const NUMERIC_FIELDS = [
   'acres', 'totalWaterAllocation', 'waterUsed', 'waterAllotment', 
   'allotmentUsed', 'lat', 'lng', 'requestedAmount', 'requestedInches',
@@ -24,7 +25,6 @@ const normalizeData = (data: any): any => {
             const camelKey = key.replace(/(_\w)/g, (m) => m[1].toUpperCase());
             let value = data[key];
             
-            // Convert strings to numbers for known numeric fields
             if (NUMERIC_FIELDS.includes(camelKey) && typeof value === 'string') {
               const num = parseFloat(value);
               value = isNaN(num) ? 0 : num;
@@ -41,19 +41,31 @@ const normalizeData = (data: any): any => {
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     const baseUrl = getBaseUrl();
     const apiKey = getApiKey();
+    const token = getToken();
     const url = `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...options.headers as Record<string, string> || {},
     };
+    
     if (apiKey) headers['x-api-key'] = apiKey;
+    
+    // Attach the Authorization token to every request
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
     try {
         const response = await fetch(url, { ...options, headers });
         const text = await response.text();
         
         if (!response.ok) {
+            // Auto-logout if the token expires
+            if (response.status === 401) {
+                localStorage.removeItem('wms_token');
+                localStorage.removeItem('wms_user');
+                window.location.reload();
+            }
+            
             let errorMsg = `Error ${response.status}`;
             try {
                 const json = JSON.parse(text);
@@ -70,6 +82,11 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     }
 };
 
+// --- AUTHENTICATION ---
+export const login = (data: any): Promise<any> => apiFetch('/auth/login', { method: 'POST', body: JSON.stringify(data) });
+export const signup = (data: any): Promise<any> => apiFetch('/auth/signup', { method: 'POST', body: JSON.stringify(data) });
+
+// --- CORE DATA ---
 export const getWaterOrders = (): Promise<WaterOrder[]> => apiFetch('/orders');
 export const createWaterOrder = (data: Partial<WaterOrder>): Promise<WaterOrder> => apiFetch('/orders', { method: 'POST', body: JSON.stringify(data) });
 export const updateWaterOrder = (id: string, data: Partial<WaterOrder>): Promise<any> => apiFetch(`/orders/${id}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -84,11 +101,11 @@ export const setFieldAccountQueue = (fieldId: string, accountId: number): Promis
 export const getWaterBank = (): Promise<WaterBankEntry[]> => apiFetch('/water-bank');
 export const getWaterAccounts = (): Promise<WaterAccount[]> => apiFetch('/accounts').catch(() => []);
 export const createWaterAccount = (data: Partial<WaterAccount>): Promise<any> => apiFetch('/accounts', { method: 'POST', body: JSON.stringify(data) });
+export const deleteWaterAccount = (id: string): Promise<any> => apiFetch(`/accounts/${id}`, { method: 'DELETE' });
 export const resetDatabase = (): Promise<any> => apiFetch('/admin/reset-db', { method: 'POST' });
 
-// --- Alert Services ---
+// --- ALERTS ---
 export const getAlerts = (): Promise<AccountAlert[]> => apiFetch('/alerts').catch(() => []);
 export const createAlerts = (data: Partial<AccountAlert>[]): Promise<any> => apiFetch('/alerts', { method: 'POST', body: JSON.stringify(data) });
 export const updateAlert = (id: string, data: Partial<AccountAlert>): Promise<any> => apiFetch(`/alerts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteAlert = (id: string): Promise<any> => apiFetch(`/alerts/${id}`, { method: 'DELETE' });
-export const deleteWaterAccount = (id: string): Promise<any> => apiFetch(`/accounts/${id}`, { method: 'DELETE' });
