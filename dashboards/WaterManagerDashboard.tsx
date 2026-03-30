@@ -14,6 +14,7 @@ import {
 import QRCodeModal from '../components/QRCodeModal';
 import NewWaterOrderModal from '../components/NewWaterOrderModal';
 import Scanner from '../components/Scanner';
+import MapPickerModal from '../components/MapPickerModal';
 import RemainingFeedView from '../components/RemainingFeedView';
 import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
 import { 
@@ -49,7 +50,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [createOrderType, setCreateOrderType] = useState<WaterOrderType>(WaterOrderType.TurnOn);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [now, setNow] = useState(new Date());
-  
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [accounts, setAccounts] = useState<WaterAccount[]>([]);
   const [alerts, setAlerts] = useState<AccountAlert[]>([]);
@@ -657,6 +658,14 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lng</label>
                         <input value={newLngCoord} onChange={e => setNewLngCoord(e.target.value)} placeholder="-116.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                     </div>
+                    {/* NEW MAP BUTTON - Spans across both inputs */}
+                    <button 
+                        type="button" 
+                        onClick={() => setIsMapModalOpen(true)}
+                        className={`col-span-2 mt-1 w-full py-2.5 rounded-xl font-black uppercase text-[10px] tracking-widest transition-colors flex items-center justify-center gap-2 border-2 ${isEditingField ? 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100' : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100'}`}
+                    >
+                        <span className="text-sm">📍</span> Open Map Selector
+                    </button>
                 </div>
             </div>
 
@@ -957,6 +966,20 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       {selectedFieldDetails && <FieldDetailsModal field={selectedFieldDetails} orders={safeOrders} onClose={() => setSelectedFieldDetails(null)} onUpdate={refreshFields} onCreateOrder={(type) => { setCreateOrderInitialFieldId(selectedFieldDetails.id); setCreateOrderType(type); setIsNewOrderModalOpen(true); }} />}
       {isNewOrderModalOpen && <NewWaterOrderModal fields={safeFields} initialFieldId={createOrderInitialFieldId} initialOrderType={createOrderType} onClose={() => setIsNewOrderModalOpen(false)} onOrderCreate={handleManualOrderCreate} />}
       {isScannerOpen && <Scanner onScan={handleIrrigatorScan} onClose={() => setIsScannerOpen(false)} />}
+      
+      {/* NEW MAP COMPONENT ADDED HERE */}
+      {isMapModalOpen && (
+        <MapPickerModal 
+            initialLat={parseFloat(newLatCoord)}
+            initialLng={parseFloat(newLngCoord)}
+            onClose={() => setIsMapModalOpen(false)} 
+            onSave={(lat, lng) => {
+                setNewLatCoord(lat.toFixed(6));
+                setNewLngCoord(lng.toFixed(6));
+                setIsMapModalOpen(false);
+            }} 
+        />
+      )}
     </div>
   );
 };
