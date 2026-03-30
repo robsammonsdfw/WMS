@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
     User, Field, WaterOrder, WaterOrderStatus, WaterOrderType, 
     Lateral, Headgate, WaterAccount, AccountAlert, AlertType 
@@ -18,8 +18,9 @@ import MapPickerModal from '../components/MapPickerModal';
 import RemainingFeedView from '../components/RemainingFeedView';
 import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
 import { 
-    createWaterOrder, updateWaterOrder, resetDatabase, 
+    createWaterOrder, updateWaterOrder, deleteWaterOrder, resetDatabase, 
     getLaterals, getHeadgates, createField, deleteField, 
+    createLateral, createHeadgate, // NEW IMPORTS
     getWaterAccounts, createWaterAccount, deleteWaterAccount,
     getAlerts, createAlerts, updateAlert, deleteAlert
 } from '../services/api';
@@ -33,7 +34,7 @@ interface WaterManagerDashboardProps {
 }
 
 type ViewMode = 'standard' | 'feed' | 'admin' | 'accounts';
-type AdminTab = 'registry' | 'alerts';
+type AdminTab = 'registry' | 'alerts' | 'infrastructure'; // NEW TAB ADDED
 
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders, refreshFields }) => {
   const safeFields = Array.isArray(fields) ? fields : [];
@@ -55,6 +56,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [accounts, setAccounts] = useState<WaterAccount[]>([]);
   const [alerts, setAlerts] = useState<AccountAlert[]>([]);
   const [unacknowledgedAlerts, setUnacknowledgedAlerts] = useState<AccountAlert[]>([]);
+
+  // NEW STATES: Infrastructure Data
+  const [laterals, setLaterals] = useState<Lateral[]>([]);
+  const [headgates, setHeadgates] = useState<Headgate[]>([]);
+  const [newLatName, setNewLatName] = useState('');
+  const [newHGId, setNewHGId] = useState('');
+  const [newHGLat, setNewHGLat] = useState('');
 
   const safeAccounts = Array.isArray(accounts) ? accounts : [];
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
@@ -120,9 +128,30 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
-      await Promise.all([getLaterals(), getHeadgates(), fetchAlertsData()]);
+      const [l, h] = await Promise.all([getLaterals(), getHeadgates()]);
+      setLaterals(Array.isArray(l) ? l : []);
+      setHeadgates(Array.isArray(h) ? h : []);
+      await fetchAlertsData();
     } catch (e) { console.error(e); } finally { setIsLoadingAdmin(false); }
   };
+
+  const combinedLateralOptions = useMemo(() => {
+    const options = [...laterals];
+    const existingIds = new Set(laterals.map(l => l.id.toLowerCase()));
+    const existingNames = new Set(laterals.map(l => l.name.toLowerCase()));
+
+    safeFields.forEach(f => {
+        if (f.lateral) {
+            const latStr = f.lateral.trim();
+            const latLower = latStr.toLowerCase();
+            if (!existingIds.has(latLower) && !existingNames.has(latLower)) {
+                options.push({ id: latStr, name: latStr });
+                existingIds.add(latLower);
+            }
+        }
+    });
+    return options;
+  }, [laterals, safeFields]);
 
   const calculateFieldStats = (field: Field) => {
     const fieldOrders = safeOrders.filter(o => o.fieldId === field.id);
@@ -264,6 +293,17 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     }
   };
 
+  const handleDeleteOrder = async (orderId: string) => {
+      if (window.confirm("Are you sure you want to permanently delete this water order?")) {
+          try {
+              await deleteWaterOrder(orderId);
+              await refreshWaterOrders();
+          } catch (err: any) {
+              alert("Failed to delete order: " + (err.message || "Unknown error"));
+          }
+      }
+  };
+
   const handleIrrigatorScan = (data: string) => {
     try {
       const parsed = JSON.parse(data);
@@ -384,6 +424,40 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       }
   };
 
+  // NEW HANDLERS: Laterals and Headgates
+  const handleAddLateral = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newLatName) return alert("Please enter a Lateral Name.");
+      const prefix = newLatName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 3).toUpperCase() || "LAT";
+      let counter = 1;
+      let generatedId = `${prefix}-${counter.toString().padStart(2, '0')}`;
+      const existingIds = laterals.map(l => l.id);
+      while (existingIds.includes(generatedId)) {
+          counter++;
+          generatedId = `${prefix}-${counter.toString().padStart(2, '0')}`;
+      }
+      try {
+          await createLateral({ id: generatedId, name: newLatName });
+          setNewLatName('');
+          await fetchAdminData();
+          await refreshFields();
+          alert(`Lateral registered successfully! Assigned ID: ${generatedId}`);
+      } catch (err: any) { alert(err.message); }
+  };
+
+  const handleAddHeadgate = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newHGId) return alert("Please enter a Gate ID.");
+      if (!newHGLat) return alert("Please select a Rider/Lateral for this headgate.");
+      try {
+          await createHeadgate({ id: newHGId, name: newHGId, lateralId: newHGLat, tapNumber: newHGId });
+          setNewHGId(''); setNewHGLat('');
+          await fetchAdminData();
+          await refreshFields();
+          alert("Headgate registered successfully.");
+      } catch (err: any) { alert(err.message); }
+  };
+
   const handleManualOrderCreate = async (orderData: { fieldId: string; orderType: WaterOrderType; requestedAmount: number; deliveryStartDate: string; deliveryEndDate?: string; accountNumber?: string; }) => {
     try {
       const field = safeFields.find(f => f.id === orderData.fieldId);
@@ -393,7 +467,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
         ...orderData, 
         fieldName: field.name, 
         requester: user.name, 
-        // FIX: Bypass the office by setting this directly to InProgress
         status: WaterOrderStatus.InProgress,
         orderDate: new Date().toISOString().split('T')[0], 
         lateralId: field.lateral || '', 
@@ -409,6 +482,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       alert("Failed to create order: " + (err.message || "Unknown error")); 
     }
   };
+
   const renderAccountsView = () => (
       <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
            <div className={`bg-white rounded-[2rem] shadow-2xl border transition-all overflow-hidden ${isEditingAccount ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
@@ -658,7 +732,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                         <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lng</label>
                         <input value={newLngCoord} onChange={e => setNewLngCoord(e.target.value)} placeholder="-116.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                     </div>
-                    {/* NEW MAP BUTTON - Spans across both inputs */}
                     <button 
                         type="button" 
                         onClick={() => setIsMapModalOpen(true)}
@@ -703,6 +776,41 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       </div>
   );
 
+  // NEW TAB COMPONENT
+  const renderInfrastructureView = () => (
+      <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
+         <div className="grid grid-cols-1 xl:grid-cols-2 gap-12 p-8">
+             <div className="space-y-6">
+                 <div className="flex items-center space-x-3 text-blue-600">
+                     <UserGroupIcon className="h-6 w-6" />
+                     <h4 className="text-lg font-black uppercase tracking-widest">Lateral Registry</h4>
+                 </div>
+                 <form onSubmit={handleAddLateral} className="grid grid-cols-1 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
+                     <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name (e.g. West Main)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                     <button type="submit" className="bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-colors">Add Lateral</button>
+                 </form>
+             </div>
+
+             <div className="space-y-6">
+                 <div className="flex items-center space-x-3 text-green-600">
+                     <RefreshIcon className="h-6 w-6" />
+                     <h4 className="text-lg font-black uppercase tracking-widest">Headgate Registry</h4>
+                 </div>
+                 <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100">
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                         <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500 w-full" />
+                         <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500 w-full">
+                             <option value="">Select Rider/Lateral...</option>
+                             {combinedLateralOptions.map(l => <option key={l.id} value={l.id}>{l.name} {l.id !== l.name ? `(${l.id})` : ''}</option>)}
+                         </select>
+                     </div>
+                     <button type="submit" className="bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700 transition-colors">Add Headgate</button>
+                 </form>
+             </div>
+         </div>
+      </div>
+  );
+
   const renderAdminView = () => (
     <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
         <div className={`bg-white rounded-[2rem] shadow-2xl border transition-all overflow-hidden ${isEditingField ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
@@ -723,23 +831,32 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 )}
             </div>
 
-            <div className="bg-gray-50 border-b border-gray-200 px-8 flex gap-4">
+            <div className="bg-gray-50 border-b border-gray-200 px-8 flex gap-4 overflow-x-auto">
                 <button 
                     onClick={() => setAdminTab('registry')}
-                    className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'registry' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                    className={`whitespace-nowrap px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'registry' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
                 >
                     Unified Field Profile Registry
                 </button>
                 <button 
                     onClick={() => setAdminTab('alerts')}
-                    className={`px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'alerts' ? 'border-rose-600 text-rose-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                    className={`whitespace-nowrap px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'alerts' ? 'border-rose-600 text-rose-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
                 >
                     Account Alerts
+                </button>
+                {/* NEW INFRASTRUCTURE TAB BUTTON */}
+                <button 
+                    onClick={() => setAdminTab('infrastructure')}
+                    className={`whitespace-nowrap px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'infrastructure' ? 'border-emerald-600 text-emerald-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                >
+                    Lateral/Headgates
                 </button>
             </div>
 
             <div className="p-8">
-                {adminTab === 'registry' ? renderRegistryView() : renderAlertsView()}
+                {adminTab === 'registry' && renderRegistryView()}
+                {adminTab === 'alerts' && renderAlertsView()}
+                {adminTab === 'infrastructure' && renderInfrastructureView()}
             </div>
         </div>
 
@@ -957,7 +1074,19 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                     </table>
                 </div>
             </div>
-            <WaterOrderList orders={myRecentOrders} title="Command History" />
+            <WaterOrderList 
+                orders={myRecentOrders} 
+                title="Command History" 
+                actions={(order) => (
+                    <button 
+                        onClick={() => handleDeleteOrder(order.id)}
+                        className="text-red-500 hover:text-red-700 font-bold uppercase text-[10px] flex items-center gap-1"
+                        title="Delete Order"
+                    >
+                        <TrashIcon className="h-4 w-4" /> Delete
+                    </button>
+                )}
+            />
         </>
       )}
 
@@ -967,7 +1096,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       {isNewOrderModalOpen && <NewWaterOrderModal fields={safeFields} initialFieldId={createOrderInitialFieldId} initialOrderType={createOrderType} onClose={() => setIsNewOrderModalOpen(false)} onOrderCreate={handleManualOrderCreate} />}
       {isScannerOpen && <Scanner onScan={handleIrrigatorScan} onClose={() => setIsScannerOpen(false)} />}
       
-      {/* NEW MAP COMPONENT ADDED HERE */}
       {isMapModalOpen && (
         <MapPickerModal 
             initialLat={parseFloat(newLatCoord)}
