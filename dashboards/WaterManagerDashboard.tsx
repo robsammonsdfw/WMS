@@ -387,17 +387,27 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     try {
       const field = safeFields.find(f => f.id === orderData.fieldId);
       if (!field) throw new Error("Field not found in registry.");
+      
       await createWaterOrder({
-        ...orderData, fieldName: field.name, requester: user.name, status: WaterOrderStatus.AwaitingApproval,
-        orderDate: new Date().toISOString().split('T')[0], lateralId: field.lateral || '', tapNumber: field.tapNumber || '',
-        headgateId: field.headgateIds?.[0] || '', accountNumber: orderData.accountNumber
+        ...orderData, 
+        fieldName: field.name, 
+        requester: user.name, 
+        // FIX: Bypass the office by setting this directly to InProgress
+        status: WaterOrderStatus.InProgress,
+        orderDate: new Date().toISOString().split('T')[0], 
+        lateralId: field.lateral || '', 
+        tapNumber: field.tapNumber || '',
+        headgateId: field.headgateIds?.[0] || '', 
+        accountNumber: orderData.accountNumber
       });
+      
       setIsNewOrderModalOpen(false);
       await refreshWaterOrders();
-      alert("Water order submitted. Awaiting verification.");
-    } catch (err: any) { alert("Failed to create order: " + (err.message || "Unknown error")); }
+      alert("Water order activated. Tracking will begin automatically on the delivery start date.");
+    } catch (err: any) { 
+      alert("Failed to create order: " + (err.message || "Unknown error")); 
+    }
   };
-
   const renderAccountsView = () => (
       <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
            <div className={`bg-white rounded-[2rem] shadow-2xl border transition-all overflow-hidden ${isEditingAccount ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
