@@ -377,14 +377,22 @@ exports.handler = async (e) => {
             }
         }
 
-        if (path.match(/^\/orders\/[^/]+$/) && method === 'PUT') {
+        if (path.match(/^\/orders\/[^/]+$/)) {
             const oid = path.split('/').pop();
-            await client.query(
-                `UPDATE water_orders SET status = COALESCE($1, status), delivery_end_date = COALESCE($2, delivery_end_date), delivery_start_date = COALESCE($3, delivery_start_date), account_number = COALESCE($4, account_number) 
-                 WHERE id = $5 AND user_id = $6`, 
-                [body.status, body.deliveryEndDate, body.deliveryStartDate, body.accountNumber, oid, currentUser.userId]
-            );
-            return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
+            
+            if (method === 'PUT') {
+                await client.query(
+                    `UPDATE water_orders SET status = COALESCE($1, status), delivery_end_date = COALESCE($2, delivery_end_date), delivery_start_date = COALESCE($3, delivery_start_date), account_number = COALESCE($4, account_number) 
+                     WHERE id = $5 AND user_id = $6`, 
+                    [body.status, body.deliveryEndDate, body.deliveryStartDate, body.accountNumber, oid, currentUser.userId]
+                );
+                return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
+            }
+            
+            if (method === 'DELETE') {
+                await client.query(`DELETE FROM water_orders WHERE id = $1 AND user_id = $2`, [oid, currentUser.userId]);
+                return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
+            }
         }
 
         if (path === '/admin/reset-db' && method === 'POST') {

@@ -94,6 +94,7 @@ export const deleteUser = (id: string | number): Promise<any> => apiFetch(`/user
 export const getWaterOrders = (): Promise<WaterOrder[]> => apiFetch('/orders');
 export const createWaterOrder = (data: Partial<WaterOrder>): Promise<WaterOrder> => apiFetch('/orders', { method: 'POST', body: JSON.stringify(data) });
 export const updateWaterOrder = (id: string, data: Partial<WaterOrder>): Promise<any> => apiFetch(`/orders/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteWaterOrder = (id: string): Promise<any> => apiFetch(`/orders/${id}`, { method: 'DELETE' });
 export const getFields = (): Promise<Field[]> => apiFetch('/fields');
 export const createField = (data: Partial<Field>): Promise<any> => apiFetch('/fields', { method: 'POST', body: JSON.stringify(data) });
 export const deleteField = (id: string): Promise<any> => apiFetch(`/fields/${id}`, { method: 'DELETE' });
