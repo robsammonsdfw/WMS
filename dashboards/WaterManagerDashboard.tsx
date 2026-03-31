@@ -152,6 +152,19 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     });
     return options;
   }, [laterals, safeFields]);
+  const combinedHeadgateOptions = useMemo(() => {
+    const options = new Set<string>();
+    // Add official headgates from DB
+    headgates.forEach(h => options.add(h.name || h.id));
+    // Add any custom ones already typed into fields
+    safeFields.forEach(f => {
+        if (f.tapNumber) options.add(f.tapNumber.trim());
+        if (f.headgateIds && f.headgateIds.length > 0) {
+            f.headgateIds.forEach(id => options.add(id.trim()));
+        }
+    });
+    return Array.from(options).filter(Boolean);
+  }, [headgates, safeFields]);
 
   const calculateFieldStats = (field: Field) => {
     const fieldOrders = safeOrders.filter(o => o.fieldId === field.id);
@@ -671,7 +684,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       );
   };
 
-  const renderRegistryView = () => (
+const renderRegistryView = () => (
       <div className="space-y-8 animate-in slide-in-from-left-4 duration-300">
         <form onSubmit={handleAddField} className={`space-y-8 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingField ? 'bg-orange-50/50 border-orange-100' : 'bg-indigo-50/50 border-indigo-100'}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -745,11 +758,33 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t ${isEditingField ? 'border-orange-200' : 'border-indigo-100'}`}>
                 <div className="space-y-1">
                     <label className={`text-[10px] font-black uppercase ml-1 tracking-widest ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>Primary Lateral Name (Direct Type)</label>
-                    <input value={newTypedLateral} onChange={e => setNewTypedLateral(e.target.value)} placeholder="e.g. Lateral 8.13" className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} />
+                    <input 
+                        list="lateral-suggestions"
+                        value={newTypedLateral} 
+                        onChange={e => setNewTypedLateral(e.target.value)} 
+                        placeholder="e.g. Lateral 8.13" 
+                        className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} 
+                    />
+                    <datalist id="lateral-suggestions">
+                        {combinedLateralOptions.map(l => (
+                            <option key={`lat-suggest-${l.id}`} value={l.name} />
+                        ))}
+                    </datalist>
                 </div>
                 <div className="space-y-1">
                     <label className={`text-[10px] font-black uppercase ml-1 tracking-widest ${isEditingField ? 'text-orange-600' : 'text-indigo-600'}`}>Primary Headgate / Tap ID (Direct Type)</label>
-                    <input value={newTypedHeadgate} onChange={e => setNewTypedHeadgate(e.target.value)} placeholder="e.g. HG-A" className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} />
+                    <input 
+                        list="headgate-suggestions"
+                        value={newTypedHeadgate} 
+                        onChange={e => setNewTypedHeadgate(e.target.value)} 
+                        placeholder="e.g. HG-A" 
+                        className={`w-full px-4 py-3 border-2 rounded-xl font-black focus:ring-2 outline-none bg-white ${isEditingField ? 'border-orange-200 text-orange-900 focus:ring-orange-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`} 
+                    />
+                    <datalist id="headgate-suggestions">
+                        {combinedHeadgateOptions.map(hg => (
+                            <option key={`hg-suggest-${hg}`} value={hg} />
+                        ))}
+                    </datalist>
                 </div>
                  <div className="space-y-1 col-span-1 md:col-span-2 mt-4">
                     <label className="text-[10px] font-black text-emerald-600 uppercase ml-1 tracking-widest">Primary Account Number (Billing)</label>
