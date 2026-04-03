@@ -68,12 +68,10 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   const [newFieldId, setNewFieldId] = useState('');
   const [newFieldName, setNewFieldName] = useState('');
-  const [newCompName, setNewCompName] = useState('');
-  const [newAddr, setNewAddr] = useState('');
-  const [newPhone, setNewPhone] = useState('');
+  const [newPhone, setNewPhone] = useState(''); // Used for Land Owner Phone
   const [newFieldCrop, setNewFieldCrop] = useState('');
   const [newFieldAcres, setNewFieldAcres] = useState('');
-  const [newFieldOwner, setNewFieldOwner] = useState('');
+  const [newFieldOwner, setNewFieldOwner] = useState(''); // Used for Land Owner Name
   const [newFieldAlloc, setNewFieldAlloc] = useState('');
   const [newFieldAllotment, setNewFieldAllotment] = useState('');
   const [newLatCoord, setNewLatCoord] = useState('');
@@ -332,11 +330,14 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   };
 
   const handleEditField = (field: Field) => {
-    setNewFieldId(field.id); setNewFieldName(field.name); setNewCompName(field.companyName || '');
-    setNewAddr(field.address || ''); setNewPhone(field.phone || ''); setNewFieldCrop(field.crop);
-    setNewFieldAcres(field.acres.toString()); setNewFieldOwner(field.owner || ''); setNewFieldAlloc(field.totalWaterAllocation.toString());
-    setNewFieldAllotment(field.waterAllotment?.toString() || ''); setNewLatCoord(field.lat?.toString() || ''); setNewLngCoord(field.lng?.toString() || '');
-    setNewTypedLateral(field.lateral || ''); setNewTypedHeadgate(field.tapNumber || ''); setNewPrimaryAccount(field.primaryAccountNumber || '');
+    setNewFieldId(field.id); setNewFieldName(field.name); 
+    setNewPhone(field.phone || ''); setNewFieldCrop(field.crop);
+    setNewFieldAcres(field.acres.toString()); setNewFieldOwner(field.owner || ''); 
+    setNewFieldAlloc(field.totalWaterAllocation.toString());
+    setNewFieldAllotment(field.waterAllotment?.toString() || ''); 
+    setNewLatCoord(field.lat?.toString() || ''); setNewLngCoord(field.lng?.toString() || '');
+    setNewTypedLateral(field.lateral || ''); setNewTypedHeadgate(field.tapNumber || ''); 
+    setNewPrimaryAccount(field.primaryAccountNumber || '');
     setIsEditingField(true);
     setAdminTab('registry'); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -344,7 +345,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
 
   const handleClearForm = (e?: React.MouseEvent) => {
     if(e) e.preventDefault();
-    setNewFieldId(''); setNewFieldName(''); setNewCompName(''); setNewAddr(''); setNewPhone(''); 
+    setNewFieldId(''); setNewFieldName(''); setNewPhone(''); 
     setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldAlloc(''); 
     setNewFieldAllotment(''); setNewLatCoord(''); setNewLngCoord('');
     setNewTypedLateral(''); setNewTypedHeadgate(''); setNewPrimaryAccount('');
@@ -356,7 +357,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     if (!newFieldId || !newFieldName) return alert("Field ID and Name required.");
     try {
         await createField({ 
-            id: newFieldId, name: newFieldName, companyName: newCompName, address: newAddr, phone: newPhone, crop: newFieldCrop, 
+            id: newFieldId, name: newFieldName, companyName: '', address: '', phone: newPhone, crop: newFieldCrop, 
             acres: parseFloat(newFieldAcres) || 0, totalWaterAllocation: parseFloat(newFieldAlloc) || 0, waterAllotment: parseFloat(newFieldAllotment) || 0,
             lat: parseFloat(newLatCoord), lng: parseFloat(newLngCoord), owner: newFieldOwner, lateral: newTypedLateral, tapNumber: newTypedHeadgate,
             headgateIds: newTypedHeadgate ? [newTypedHeadgate] : [], primaryAccountNumber: newPrimaryAccount
@@ -654,46 +655,36 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                     <input value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="e.g. SOUTH 40" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                 </div>
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Company Name</label>
-                    <input value={newCompName} onChange={e => setNewCompName(e.target.value)} placeholder="Farming Co." className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Crop Type</label>
+                    <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Corn" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                 </div>
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Phone</label>
-                    <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="555-0101" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Address</label>
-                    <input value={newAddr} onChange={e => setNewAddr(e.target.value)} placeholder="123 Field Lane" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Crop Type</label>
-                        <input value={newFieldCrop} onChange={e => setNewFieldCrop(e.target.value)} placeholder="Corn" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Acres</label>
-                        <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="100" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
-                    </div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Acres</label>
+                    <input type="number" value={newFieldAcres} onChange={e => setNewFieldAcres(e.target.value)} placeholder="100" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner Name</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Land Owner Name</label>
                     <input value={newFieldOwner} onChange={e => setNewFieldOwner(e.target.value)} placeholder="John Doe" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                 </div>
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Season AF (Legacy)</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Land Owner Phone</label>
+                    <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="555-0101" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                </div>
+                <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Year Allowance AF</label>
                     <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="400" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                 </div>
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Allotment AF (Legacy)</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Year Allotment AF</label>
                     <input type="number" value={newFieldAllotment} onChange={e => setNewFieldAllotment(e.target.value)} placeholder="250" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div className="lg:col-span-1 grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                         <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Lat</label>
                         <input value={newLatCoord} onChange={e => setNewLatCoord(e.target.value)} placeholder="43.0" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
