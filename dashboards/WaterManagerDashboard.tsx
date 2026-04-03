@@ -72,8 +72,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newFieldCrop, setNewFieldCrop] = useState('');
   const [newFieldAcres, setNewFieldAcres] = useState('');
   const [newFieldOwner, setNewFieldOwner] = useState(''); // Used for Land Owner Name
-  const [newFieldAlloc, setNewFieldAlloc] = useState('');
-  const [newFieldAllotment, setNewFieldAllotment] = useState('');
   const [newLatCoord, setNewLatCoord] = useState('');
   const [newLngCoord, setNewLngCoord] = useState('');
   const [newPrimaryAccount, setNewPrimaryAccount] = useState('');
@@ -84,6 +82,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newAccNumber, setNewAccNumber] = useState('');
   const [newAccOwner, setNewAccOwner] = useState('');
   const [newAccAllotment, setNewAccAllotment] = useState('');
+  const [newAccAllowance, setNewAccAllowance] = useState(''); // New State for Account Allowance
   const [isEditingAccount, setIsEditingAccount] = useState(false);
 
   const [alertAccount, setAlertAccount] = useState<string>(''); 
@@ -104,6 +103,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   useEffect(() => {
     if (viewMode === 'admin') fetchAdminData();
   }, [viewMode]);
+
+  // Default the Primary Account on the Field Registry form to the first available account
+  useEffect(() => {
+      if (!isEditingField && !newPrimaryAccount && safeAccounts.length > 0) {
+          setNewPrimaryAccount(safeAccounts[0].accountNumber);
+      }
+  }, [safeAccounts, isEditingField, newPrimaryAccount]);
 
   const fetchAccounts = async () => {
       try {
@@ -333,8 +339,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     setNewFieldId(field.id); setNewFieldName(field.name); 
     setNewPhone(field.phone || ''); setNewFieldCrop(field.crop);
     setNewFieldAcres(field.acres.toString()); setNewFieldOwner(field.owner || ''); 
-    setNewFieldAlloc(field.totalWaterAllocation.toString());
-    setNewFieldAllotment(field.waterAllotment?.toString() || ''); 
     setNewLatCoord(field.lat?.toString() || ''); setNewLngCoord(field.lng?.toString() || '');
     setNewTypedLateral(field.lateral || ''); setNewTypedHeadgate(field.tapNumber || ''); 
     setNewPrimaryAccount(field.primaryAccountNumber || '');
@@ -346,19 +350,28 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const handleClearForm = (e?: React.MouseEvent) => {
     if(e) e.preventDefault();
     setNewFieldId(''); setNewFieldName(''); setNewPhone(''); 
-    setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); setNewFieldAlloc(''); 
-    setNewFieldAllotment(''); setNewLatCoord(''); setNewLngCoord('');
-    setNewTypedLateral(''); setNewTypedHeadgate(''); setNewPrimaryAccount('');
+    setNewFieldCrop(''); setNewFieldAcres(''); setNewFieldOwner(''); 
+    setNewLatCoord(''); setNewLngCoord('');
+    setNewTypedLateral(''); setNewTypedHeadgate(''); 
+    setNewPrimaryAccount(safeAccounts.length > 0 ? safeAccounts[0].accountNumber : '');
     setIsEditingField(false);
   };
 
   const handleAddField = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFieldId || !newFieldName) return alert("Field ID and Name required.");
+    
+    // Intercept and grab the definitive source of truth from the Account
+    const selectedAcc = safeAccounts.find(a => a.accountNumber === newPrimaryAccount);
+    const appliedAllowance = selectedAcc ? ((selectedAcc as any).totalAllowance || 0) : 0;
+    const appliedAllotment = selectedAcc ? (selectedAcc.totalAllotment || 0) : 0;
+
     try {
         await createField({ 
             id: newFieldId, name: newFieldName, companyName: '', address: '', phone: newPhone, crop: newFieldCrop, 
-            acres: parseFloat(newFieldAcres) || 0, totalWaterAllocation: parseFloat(newFieldAlloc) || 0, waterAllotment: parseFloat(newFieldAllotment) || 0,
+            acres: parseFloat(newFieldAcres) || 0, 
+            totalWaterAllocation: parseFloat(appliedAllowance), // Passed dynamically
+            waterAllotment: parseFloat(appliedAllotment as any), // Passed dynamically
             lat: parseFloat(newLatCoord), lng: parseFloat(newLngCoord), owner: newFieldOwner, lateral: newTypedLateral, tapNumber: newTypedHeadgate,
             headgateIds: newTypedHeadgate ? [newTypedHeadgate] : [], primaryAccountNumber: newPrimaryAccount
         });
@@ -372,6 +385,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       setNewAccNumber(acc.accountNumber);
       setNewAccOwner(acc.ownerName);
       setNewAccAllotment(acc.totalAllotment.toString());
+      setNewAccAllowance((acc as any).totalAllowance?.toString() || '');
       setIsEditingAccount(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -380,6 +394,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       setNewAccNumber('');
       setNewAccOwner('');
       setNewAccAllotment('');
+      setNewAccAllowance('');
       setIsEditingAccount(false);
   };
 
@@ -387,7 +402,12 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       e.preventDefault();
       if (!newAccNumber || !newAccOwner) return alert("Account Number and Owner required");
       try {
-          await createWaterAccount({ accountNumber: newAccNumber, ownerName: newAccOwner, totalAllotment: parseFloat(newAccAllotment) || 0 });
+          await createWaterAccount({ 
+              accountNumber: newAccNumber, 
+              ownerName: newAccOwner, 
+              totalAllotment: parseFloat(newAccAllotment) || 0,
+              totalAllowance: parseFloat(newAccAllowance) || 0 // Sent to backend
+          } as Partial<WaterAccount>);
           handleClearAccountForm();
           await fetchAccounts();
           alert(isEditingAccount ? "Account Ledger Updated." : "Account Created.");
@@ -504,7 +524,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 </div>
                 <div className="p-8">
                      <form onSubmit={handleCreateAccount} className={`space-y-6 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingAccount ? 'bg-orange-50/50 border-orange-100' : 'bg-emerald-50/50 border-emerald-100'}`}>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Account Number</label>
                                 <input value={newAccNumber} onChange={e => setNewAccNumber(e.target.value)} placeholder="ACCT-2024-001" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingAccount ? 'border-orange-200 focus:ring-orange-500 bg-white' : 'border-gray-200 focus:ring-emerald-500'}`} />
@@ -512,6 +532,10 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Owner Name</label>
                                 <input value={newAccOwner} onChange={e => setNewAccOwner(e.target.value)} placeholder="Entity Name" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingAccount ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-emerald-500'}`} />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Total Allowance (AF)</label>
+                                <input type="number" value={newAccAllowance} onChange={e => setNewAccAllowance(e.target.value)} placeholder="500.00" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingAccount ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-emerald-500'}`} />
                             </div>
                              <div className="space-y-1">
                                 <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Total Allotment (AF)</label>
@@ -642,7 +666,13 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       </div>
   );
 
-  const renderRegistryView = () => (
+  const renderRegistryView = () => {
+      // Find the account object that corresponds to the currently selected dropdown value
+      const selectedAccForForm = safeAccounts.find(a => a.accountNumber === newPrimaryAccount);
+      const displayAllowance = selectedAccForForm ? ((selectedAccForForm as any).totalAllowance || 0) : 0;
+      const displayAllotment = selectedAccForForm ? (selectedAccForForm.totalAllotment || 0) : 0;
+
+      return (
       <div className="space-y-8 animate-in slide-in-from-left-4 duration-300 pb-10">
         <form onSubmit={handleAddField} className={`space-y-8 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingField ? 'bg-orange-50/50 border-orange-100' : 'bg-indigo-50/50 border-indigo-100'}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -674,12 +704,16 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                     <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="555-0101" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
                 </div>
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Year Allowance AF</label>
-                    <input type="number" value={newFieldAlloc} onChange={e => setNewFieldAlloc(e.target.value)} placeholder="400" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Year Allowance AF (Read Only)</label>
+                    <div className="w-full px-4 py-3 border rounded-xl font-bold bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed flex items-center h-[50px]">
+                        {displayAllowance}
+                    </div>
                 </div>
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Year Allotment AF</label>
-                    <input type="number" value={newFieldAllotment} onChange={e => setNewFieldAllotment(e.target.value)} placeholder="250" className={`w-full px-4 py-3 border rounded-xl font-bold focus:ring-2 outline-none ${isEditingField ? 'border-orange-200 focus:ring-orange-500' : 'border-gray-200 focus:ring-indigo-500'}`} />
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Current Year Allotment AF (Read Only)</label>
+                    <div className="w-full px-4 py-3 border rounded-xl font-bold bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed flex items-center h-[50px]">
+                        {displayAllotment}
+                    </div>
                 </div>
             </div>
 
@@ -771,7 +805,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
             </button>
         </div>
       </div>
-  );
+      );
+  };
 
   const renderAlertsView = () => {
       const thresholds = showAllThresholds 
