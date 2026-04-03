@@ -20,7 +20,7 @@ import WaterUsageAlertModal from '../components/WaterUsageAlertModal';
 import { 
     createWaterOrder, updateWaterOrder, deleteWaterOrder, resetDatabase, 
     getLaterals, getHeadgates, createField, deleteField, 
-    createLateral, createHeadgate, // NEW IMPORTS
+    createLateral, createHeadgate,
     getWaterAccounts, createWaterAccount, deleteWaterAccount,
     getAlerts, createAlerts, updateAlert, deleteAlert
 } from '../services/api';
@@ -33,15 +33,15 @@ interface WaterManagerDashboardProps {
   refreshFields: () => Promise<void>;
 }
 
-type ViewMode = 'standard' | 'feed' | 'admin' | 'accounts';
-type AdminTab = 'registry' | 'alerts' | 'infrastructure'; // NEW TAB ADDED
+type ViewMode = 'standard' | 'feed' | 'admin';
+type AdminTab = 'accounts' | 'infrastructure' | 'registry' | 'alerts';
 
 const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, waterOrders, fields, refreshWaterOrders, refreshFields }) => {
   const safeFields = Array.isArray(fields) ? fields : [];
   const safeOrders = Array.isArray(waterOrders) ? waterOrders : [];
 
   const [viewMode, setViewMode] = useState<ViewMode>('standard');
-  const [adminTab, setAdminTab] = useState<AdminTab>('registry');
+  const [adminTab, setAdminTab] = useState<AdminTab>('accounts');
   
   const [selectedFieldForQR, setSelectedFieldForQR] = useState<Field | null>(null);
   const [selectedFieldDetails, setSelectedFieldDetails] = useState<Field | null>(null);
@@ -57,7 +57,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [alerts, setAlerts] = useState<AccountAlert[]>([]);
   const [unacknowledgedAlerts, setUnacknowledgedAlerts] = useState<AccountAlert[]>([]);
 
-  // NEW STATES: Infrastructure Data
   const [laterals, setLaterals] = useState<Lateral[]>([]);
   const [headgates, setHeadgates] = useState<Headgate[]>([]);
   const [newLatName, setNewLatName] = useState('');
@@ -67,7 +66,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const safeAccounts = Array.isArray(accounts) ? accounts : [];
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
 
-  // Field Registry States
   const [newFieldId, setNewFieldId] = useState('');
   const [newFieldName, setNewFieldName] = useState('');
   const [newCompName, setNewCompName] = useState('');
@@ -85,13 +83,11 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   const [newTypedHeadgate, setNewTypedHeadgate] = useState('');
   const [isEditingField, setIsEditingField] = useState(false);
 
-  // Account Registry States
   const [newAccNumber, setNewAccNumber] = useState('');
   const [newAccOwner, setNewAccOwner] = useState('');
   const [newAccAllotment, setNewAccAllotment] = useState('');
   const [isEditingAccount, setIsEditingAccount] = useState(false);
 
-  // Alerts Form States
   const [alertAccount, setAlertAccount] = useState<string>(''); 
   const [alertType, setAlertType] = useState<AlertType>(AlertType.Both);
   const [alertThreshold, setAlertThreshold] = useState<number>(10);
@@ -152,11 +148,10 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
     });
     return options;
   }, [laterals, safeFields]);
+
   const combinedHeadgateOptions = useMemo(() => {
     const options = new Set<string>();
-    // Add official headgates from DB
     headgates.forEach(h => options.add(h.name || h.id));
-    // Add any custom ones already typed into fields
     safeFields.forEach(f => {
         if (f.tapNumber) options.add(f.tapNumber.trim());
         if (f.headgateIds && f.headgateIds.length > 0) {
@@ -437,7 +432,6 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       }
   };
 
-  // NEW HANDLERS: Laterals and Headgates
   const handleAddLateral = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newLatName) return alert("Please enter a Lateral Name.");
@@ -497,8 +491,8 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   };
 
   const renderAccountsView = () => (
-      <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
-           <div className={`bg-white rounded-[2rem] shadow-2xl border transition-all overflow-hidden ${isEditingAccount ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
+      <div className="space-y-8 animate-in slide-in-from-left-4 duration-300">
+           <div className={`bg-white rounded-[2rem] shadow-lg border transition-all overflow-hidden ${isEditingAccount ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
                 <div className={`p-8 text-white flex justify-between items-center transition-colors ${isEditingAccount ? 'bg-orange-600' : 'bg-emerald-900'}`}>
                     <div>
                         <h3 className="text-2xl font-black uppercase tracking-tight">Water Bank Ledger</h3>
@@ -684,7 +678,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
       );
   };
 
-const renderRegistryView = () => (
+  const renderRegistryView = () => (
       <div className="space-y-8 animate-in slide-in-from-left-4 duration-300">
         <form onSubmit={handleAddField} className={`space-y-8 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingField ? 'bg-orange-50/50 border-orange-100' : 'bg-indigo-50/50 border-indigo-100'}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -811,7 +805,6 @@ const renderRegistryView = () => (
       </div>
   );
 
-  // NEW TAB COMPONENT
   const renderInfrastructureView = () => (
       <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
          <div className="grid grid-cols-1 xl:grid-cols-2 gap-12 p-8">
@@ -868,6 +861,18 @@ const renderRegistryView = () => (
 
             <div className="bg-gray-50 border-b border-gray-200 px-8 flex gap-4 overflow-x-auto">
                 <button 
+                    onClick={() => setAdminTab('accounts')}
+                    className={`whitespace-nowrap px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'accounts' ? 'border-emerald-600 text-emerald-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                >
+                    Accounts
+                </button>
+                <button 
+                    onClick={() => setAdminTab('infrastructure')}
+                    className={`whitespace-nowrap px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'infrastructure' ? 'border-purple-600 text-purple-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                >
+                    Lateral/Headgates
+                </button>
+                <button 
                     onClick={() => setAdminTab('registry')}
                     className={`whitespace-nowrap px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'registry' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
                 >
@@ -879,19 +884,13 @@ const renderRegistryView = () => (
                 >
                     Account Alerts
                 </button>
-                {/* NEW INFRASTRUCTURE TAB BUTTON */}
-                <button 
-                    onClick={() => setAdminTab('infrastructure')}
-                    className={`whitespace-nowrap px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all ${adminTab === 'infrastructure' ? 'border-emerald-600 text-emerald-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                >
-                    Lateral/Headgates
-                </button>
             </div>
 
             <div className="p-8">
+                {adminTab === 'accounts' && renderAccountsView()}
+                {adminTab === 'infrastructure' && renderInfrastructureView()}
                 {adminTab === 'registry' && renderRegistryView()}
                 {adminTab === 'alerts' && renderAlertsView()}
-                {adminTab === 'infrastructure' && renderInfrastructureView()}
             </div>
         </div>
 
@@ -1024,7 +1023,6 @@ const renderRegistryView = () => (
           <div className="flex bg-gray-100 rounded-[2rem] p-1.5 border-2 border-white shadow-inner">
             <button onClick={() => setViewMode('standard')} className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'standard' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}>Standard</button>
             <button onClick={() => setViewMode('feed')} className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'feed' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}>Remaining Feed</button>
-            <button onClick={() => setViewMode('accounts')} className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'accounts' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}>Accounts</button>
             <button onClick={() => setViewMode('admin')} className={`px-6 py-2.5 rounded-[1.5rem] text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'admin' ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-gray-500'}`}>Infrastructure</button>
           </div>
           <div className="flex gap-2">
@@ -1033,7 +1031,7 @@ const renderRegistryView = () => (
           </div>
       </div>
       
-      {viewMode === 'admin' ? renderAdminView() : viewMode === 'accounts' ? renderAccountsView() : viewMode === 'feed' ? (
+      {viewMode === 'admin' ? renderAdminView() : viewMode === 'feed' ? (
         <RemainingFeedView fields={safeFields} waterOrders={safeOrders} onFieldClick={setSelectedFieldDetails} />
       ) : (
         <>
