@@ -491,7 +491,7 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
   };
 
   const renderAccountsView = () => (
-      <div className="space-y-8 animate-in slide-in-from-left-4 duration-300">
+      <div className="space-y-8 animate-in slide-in-from-left-4 duration-300 pb-10">
            <div className={`bg-white rounded-[2rem] shadow-lg border transition-all overflow-hidden ${isEditingAccount ? 'border-orange-200 shadow-orange-100' : 'border-gray-100'}`}>
                 <div className={`p-8 text-white flex justify-between items-center transition-colors ${isEditingAccount ? 'bg-orange-600' : 'bg-emerald-900'}`}>
                     <div>
@@ -576,110 +576,73 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                    )
                })}
            </div>
+
+           {/* Guided Workflow - Accounts Next Button */}
+           <div className="mt-12 flex flex-col items-center justify-center p-8 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
+               <p className="text-xl font-black text-gray-600 uppercase tracking-widest mb-6">Finished Entering Accounts? Click</p>
+               <button 
+                    onClick={() => {
+                        setAdminTab('infrastructure');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }} 
+                    className="px-16 py-4 bg-gray-900 text-white rounded-2xl font-black uppercase tracking-[0.2em] hover:bg-gray-800 transition-all shadow-xl hover:-translate-y-1"
+                >
+                   Next
+               </button>
+           </div>
       </div>
   );
 
-  const renderAlertsView = () => {
-      const thresholds = showAllThresholds 
-          ? Array.from({length: 21}, (_, i) => i * 5)
-          : Array.from({length: 7}, (_, i) => i * 5);
+  const renderInfrastructureView = () => (
+      <div className="space-y-8 animate-in slide-in-from-right-4 duration-300 pb-10">
+         <div className="grid grid-cols-1 xl:grid-cols-2 gap-12 p-8">
+             <div className="space-y-6">
+                 <div className="flex items-center space-x-3 text-blue-600">
+                     <UserGroupIcon className="h-6 w-6" />
+                     <h4 className="text-lg font-black uppercase tracking-widest">Lateral Registry</h4>
+                 </div>
+                 <form onSubmit={handleAddLateral} className="grid grid-cols-1 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
+                     <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name (e.g. West Main)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                     <button type="submit" className="bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-colors">Add Lateral</button>
+                 </form>
+             </div>
 
-      return (
-          <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-               <div className="bg-white rounded-[2rem] shadow-2xl border border-rose-100 overflow-hidden">
-                    <div className="bg-rose-600 p-8 text-white">
-                        <h3 className="text-2xl font-black uppercase tracking-tight">System Alerts Configuration</h3>
-                        <p className="text-rose-200 font-bold text-sm">Monitor Allowance and Allotment Usage Thresholds</p>
-                    </div>
-                    
-                    <div className="p-8">
-                         <form onSubmit={handleCreateAlert} className="space-y-6 bg-rose-50/50 p-8 rounded-[2.5rem] border border-rose-100 shadow-sm">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Target Account</label>
-                                    <select value={alertAccount} onChange={e => setAlertAccount(e.target.value)} className="w-full px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
-                                        <option value="" disabled>Select an account...</option>
-                                        <option value="ALL" className="font-black text-rose-600">⚡ Bulk Set All Accounts ⚡</option>
-                                        {safeAccounts.map(acc => (
-                                            <option key={acc.accountNumber} value={acc.accountNumber}>{acc.accountNumber} - {acc.ownerName}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Alert Trigger Focus</label>
-                                    <select value={alertType} onChange={e => setAlertType(e.target.value as AlertType)} className="w-full px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
-                                        <option value={AlertType.Allotment}>Allotment Only</option>
-                                        <option value={AlertType.Allocation}>Allowance Only</option>
-                                        <option value={AlertType.Both}>Alert on Both</option>
-                                    </select>
-                                </div>
-                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Threshold Percentage (%)</label>
-                                    <div className="flex gap-2">
-                                        <select value={alertThreshold} onChange={e => setAlertThreshold(Number(e.target.value))} className="flex-1 px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
-                                            {thresholds.map(t => (
-                                                <option key={t} value={t}>{t}% Remaining</option>
-                                            ))}
-                                        </select>
-                                        {!showAllThresholds && (
-                                            <button type="button" onClick={() => setShowAllThresholds(true)} className="px-4 py-3 bg-rose-100 text-rose-700 rounded-xl font-black text-xs hover:bg-rose-200 transition-colors whitespace-nowrap">
-                                                Show All %
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                            <button type="submit" className="w-full bg-rose-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-rose-700 shadow-xl transition-all">Register New Alert Level</button>
-                         </form>
-                    </div>
-               </div>
+             <div className="space-y-6">
+                 <div className="flex items-center space-x-3 text-green-600">
+                     <RefreshIcon className="h-6 w-6" />
+                     <h4 className="text-lg font-black uppercase tracking-widest">Headgate Registry</h4>
+                 </div>
+                 <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100">
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                         <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500 w-full" />
+                         <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500 w-full">
+                             <option value="">Select Rider/Lateral...</option>
+                             {combinedLateralOptions.map(l => <option key={l.id} value={l.id}>{l.name} {l.id !== l.name ? `(${l.id})` : ''}</option>)}
+                         </select>
+                     </div>
+                     <button type="submit" className="bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700 transition-colors">Add Headgate</button>
+                 </form>
+             </div>
+         </div>
 
-               <div className="bg-white p-8 rounded-[2rem] shadow-xl border border-gray-100">
-                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6">Active Threshold Monitors</h3>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Account Target</th>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Monitor Type</th>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Trigger Level</th>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
-                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-100">
-                                {safeAlerts.length === 0 ? (
-                                    <tr><td colSpan={5} className="px-6 py-8 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">No alerts registered</td></tr>
-                                ) : safeAlerts.map(alert => (
-                                    <tr key={alert.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{alert.accountNumber}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold uppercase text-gray-600">
-                                            {alert.alertType === AlertType.Allocation ? 'Allowance' : alert.alertType}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap font-black text-rose-600">{alert.thresholdPercent}% Remaining</td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            {alert.isAcknowledged ? 
-                                                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-black uppercase">Acknowledged</span> : 
-                                                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase animate-pulse">Monitoring</span>
-                                            }
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <button onClick={() => handleDeleteAlert(alert.id)} className="text-red-500 hover:text-red-700 font-bold uppercase text-[10px] flex items-center gap-1">
-                                                <TrashIcon className="h-4 w-4" /> Remove
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-               </div>
-          </div>
-      );
-  };
+         {/* Guided Workflow - Infrastructure Next Button */}
+         <div className="mx-8 mt-12 flex flex-col items-center justify-center p-8 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
+             <p className="text-xl font-black text-gray-600 uppercase tracking-widest mb-6 text-center">Finished Entering Laterals and Headgates? Click</p>
+             <button 
+                  onClick={() => {
+                      setAdminTab('registry');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }} 
+                  className="px-16 py-4 bg-gray-900 text-white rounded-2xl font-black uppercase tracking-[0.2em] hover:bg-gray-800 transition-all shadow-xl hover:-translate-y-1"
+              >
+                 Next
+             </button>
+         </div>
+      </div>
+  );
 
   const renderRegistryView = () => (
-      <div className="space-y-8 animate-in slide-in-from-left-4 duration-300">
+      <div className="space-y-8 animate-in slide-in-from-left-4 duration-300 pb-10">
         <form onSubmit={handleAddField} className={`space-y-8 p-8 rounded-[2.5rem] border shadow-sm transition-colors ${isEditingField ? 'bg-orange-50/50 border-orange-100' : 'bg-indigo-50/50 border-indigo-100'}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div className="space-y-1">
@@ -802,42 +765,136 @@ const WaterManagerDashboard: React.FC<WaterManagerDashboardProps> = ({ user, wat
                 </button>
             </div>
         </form>
+
+        {/* Guided Workflow - Registry Next Button */}
+        <div className="mt-12 flex flex-col items-center justify-center p-8 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
+            <p className="text-xl font-black text-gray-600 uppercase tracking-widest mb-6">Finished adding Fields?</p>
+            <button 
+                 onClick={() => {
+                     setAdminTab('alerts');
+                     window.scrollTo({ top: 0, behavior: 'smooth' });
+                 }} 
+                 className="px-16 py-4 bg-gray-900 text-white rounded-2xl font-black uppercase tracking-[0.2em] hover:bg-gray-800 transition-all shadow-xl hover:-translate-y-1"
+             >
+                Next
+            </button>
+        </div>
       </div>
   );
 
-  const renderInfrastructureView = () => (
-      <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-         <div className="grid grid-cols-1 xl:grid-cols-2 gap-12 p-8">
-             <div className="space-y-6">
-                 <div className="flex items-center space-x-3 text-blue-600">
-                     <UserGroupIcon className="h-6 w-6" />
-                     <h4 className="text-lg font-black uppercase tracking-widest">Lateral Registry</h4>
-                 </div>
-                 <form onSubmit={handleAddLateral} className="grid grid-cols-1 gap-4 bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
-                     <input value={newLatName} onChange={e => setNewLatName(e.target.value)} placeholder="Lateral Name (e.g. West Main)" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" />
-                     <button type="submit" className="bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-colors">Add Lateral</button>
-                 </form>
-             </div>
+  const renderAlertsView = () => {
+      const thresholds = showAllThresholds 
+          ? Array.from({length: 21}, (_, i) => i * 5)
+          : Array.from({length: 7}, (_, i) => i * 5);
 
-             <div className="space-y-6">
-                 <div className="flex items-center space-x-3 text-green-600">
-                     <RefreshIcon className="h-6 w-6" />
-                     <h4 className="text-lg font-black uppercase tracking-widest">Headgate Registry</h4>
-                 </div>
-                 <form onSubmit={handleAddHeadgate} className="grid grid-cols-1 gap-4 bg-green-50/50 p-6 rounded-3xl border border-green-100">
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                         <input value={newHGId} onChange={e => setNewHGId(e.target.value)} placeholder="Gate ID" className="px-4 py-3 border border-gray-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-green-500 w-full" />
-                         <select value={newHGLat} onChange={e => setNewHGLat(e.target.value)} className="px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-green-500 w-full">
-                             <option value="">Select Rider/Lateral...</option>
-                             {combinedLateralOptions.map(l => <option key={l.id} value={l.id}>{l.name} {l.id !== l.name ? `(${l.id})` : ''}</option>)}
-                         </select>
-                     </div>
-                     <button type="submit" className="bg-green-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-green-700 transition-colors">Add Headgate</button>
-                 </form>
-             </div>
-         </div>
-      </div>
-  );
+      return (
+          <div className="space-y-8 animate-in slide-in-from-right-4 duration-300 pb-10">
+               <div className="bg-white rounded-[2rem] shadow-2xl border border-rose-100 overflow-hidden">
+                    <div className="bg-rose-600 p-8 text-white">
+                        <h3 className="text-2xl font-black uppercase tracking-tight">System Alerts Configuration</h3>
+                        <p className="text-rose-200 font-bold text-sm">Monitor Allowance and Allotment Usage Thresholds</p>
+                    </div>
+                    
+                    <div className="p-8">
+                         <form onSubmit={handleCreateAlert} className="space-y-6 bg-rose-50/50 p-8 rounded-[2.5rem] border border-rose-100 shadow-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Target Account</label>
+                                    <select value={alertAccount} onChange={e => setAlertAccount(e.target.value)} className="w-full px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
+                                        <option value="" disabled>Select an account...</option>
+                                        <option value="ALL" className="font-black text-rose-600">⚡ Bulk Set All Accounts ⚡</option>
+                                        {safeAccounts.map(acc => (
+                                            <option key={acc.accountNumber} value={acc.accountNumber}>{acc.accountNumber} - {acc.ownerName}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Alert Trigger Focus</label>
+                                    <select value={alertType} onChange={e => setAlertType(e.target.value as AlertType)} className="w-full px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
+                                        <option value={AlertType.Allotment}>Allotment Only</option>
+                                        <option value={AlertType.Allocation}>Allowance Only</option>
+                                        <option value={AlertType.Both}>Alert on Both</option>
+                                    </select>
+                                </div>
+                                 <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-rose-900 uppercase ml-1">Threshold Percentage (%)</label>
+                                    <div className="flex gap-2">
+                                        <select value={alertThreshold} onChange={e => setAlertThreshold(Number(e.target.value))} className="flex-1 px-4 py-3 border border-rose-200 rounded-xl font-bold focus:ring-2 focus:ring-rose-500 outline-none bg-white">
+                                            {thresholds.map(t => (
+                                                <option key={t} value={t}>{t}% Remaining</option>
+                                            ))}
+                                        </select>
+                                        {!showAllThresholds && (
+                                            <button type="button" onClick={() => setShowAllThresholds(true)} className="px-4 py-3 bg-rose-100 text-rose-700 rounded-xl font-black text-xs hover:bg-rose-200 transition-colors whitespace-nowrap">
+                                                Show All %
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="submit" className="w-full bg-rose-600 text-white py-4 rounded-xl font-black uppercase text-sm hover:bg-rose-700 shadow-xl transition-all">Register New Alert Level</button>
+                         </form>
+                    </div>
+               </div>
+
+               <div className="bg-white p-8 rounded-[2rem] shadow-xl border border-gray-100">
+                    <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-6">Active Threshold Monitors</h3>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Account Target</th>
+                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Monitor Type</th>
+                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Trigger Level</th>
+                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
+                                    <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-100">
+                                {safeAlerts.length === 0 ? (
+                                    <tr><td colSpan={5} className="px-6 py-8 text-center text-sm font-bold text-gray-400 uppercase tracking-widest">No alerts registered</td></tr>
+                                ) : safeAlerts.map(alert => (
+                                    <tr key={alert.id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap font-black text-gray-900">{alert.accountNumber}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold uppercase text-gray-600">
+                                            {alert.alertType === AlertType.Allocation ? 'Allowance' : alert.alertType}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap font-black text-rose-600">{alert.thresholdPercent}% Remaining</td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            {alert.isAcknowledged ? 
+                                                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-[10px] font-black uppercase">Acknowledged</span> : 
+                                                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase animate-pulse">Monitoring</span>
+                                            }
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <button onClick={() => handleDeleteAlert(alert.id)} className="text-red-500 hover:text-red-700 font-bold uppercase text-[10px] flex items-center gap-1">
+                                                <TrashIcon className="h-4 w-4" /> Remove
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+               </div>
+
+               {/* Guided Workflow - Alerts Finish Button */}
+               <div className="mt-12 flex flex-col items-center justify-center p-8 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
+                   <p className="text-xl font-black text-gray-600 uppercase tracking-widest mb-6">Finished adding Alerts?</p>
+                   <button 
+                        onClick={() => {
+                            setAdminTab('accounts'); // Reset back to first tab for next time
+                            setViewMode('feed');
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }} 
+                        className="px-16 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 hover:-translate-y-1"
+                    >
+                       Finish
+                   </button>
+               </div>
+          </div>
+      );
+  };
 
   const renderAdminView = () => (
     <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-300 pb-20">
