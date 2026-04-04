@@ -10,6 +10,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState('farmer'); // New state for role selection
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -23,7 +24,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         const response = await login({ email, password });
         onAuthSuccess(response.user, response.token);
       } else {
-        const response = await signup({ email, password, role: 'farmer' });
+        // Now passes the dynamically selected role instead of hardcoding 'farmer'
+        const response = await signup({ email, password, role });
         onAuthSuccess(response.user, response.token);
       }
     } catch (err: any) {
@@ -78,6 +80,25 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
               placeholder="••••••••"
             />
           </div>
+
+          {/* Conditional Dropdown for Signup Only */}
+          {!isLogin && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400 uppercase ml-1 tracking-widest">Select Account Role</label>
+              <select 
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold focus:border-blue-500 focus:ring-0 outline-none transition-colors bg-white"
+              >
+                <option value="farmer">Farmer</option>
+                <option value="Water Manager">Water Manager</option>
+                <option value="Water Office">Water Office</option>
+                <option value="District Office">District Office</option>
+                <option value="Ditch Rider">Ditch Rider</option>
+                <option value="superuser">Superuser (Admin Test)</option>
+              </select>
+            </div>
+          )}
 
           <button 
             type="submit" 

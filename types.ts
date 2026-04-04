@@ -4,6 +4,7 @@ export enum UserRole {
   DistrictOffice = 'District Office',
   DitchRider = 'Ditch Rider',
   Farmer = 'farmer', // Added fallback role used by the backend signup
+  Superuser = 'superuser', // Added for DB reset and full admin access
 }
 
 export interface User {
@@ -15,6 +16,7 @@ export interface User {
   phone?: string; // Added for the new Profile page
   assignedLaterals?: string[];
 }
+
 
 export enum WaterOrderStatus {
   Pending = 'Pending',

@@ -209,7 +209,7 @@ exports.handler = async (e) => {
         }
 
         if (path.match(/^\/users\/[^/]+$/)) {
-            const uId = path.split('/').pop();
+            const uId = decodeURIComponent(path.split('/').pop());
             if (method === 'PUT') {
                 const { name, email, role, city, phone } = body;
                 await client.query(
@@ -242,7 +242,7 @@ exports.handler = async (e) => {
         }
 
         if (path.match(/^\/accounts\/[^/]+$/) && method === 'DELETE') {
-            const accNum = path.split('/').pop();
+            const accNum = decodeURIComponent(path.split('/').pop());
             await client.query(`DELETE FROM accounts WHERE account_number = $1 AND user_id = $2`, [accNum, currentUser.userId]);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
@@ -277,13 +277,13 @@ exports.handler = async (e) => {
         }
 
         if (path.match(/^\/alerts\/[^/]+$/) && method === 'PUT') {
-            const alertId = path.split('/').pop();
+            const alertId = decodeURIComponent(path.split('/').pop());
             await client.query(`UPDATE account_alerts SET is_acknowledged = COALESCE($1, is_acknowledged) WHERE id = $2 AND user_id = $3`, [body.isAcknowledged, alertId, currentUser.userId]);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
 
         if (path.match(/^\/alerts\/[^/]+$/) && method === 'DELETE') {
-            const alertId = path.split('/').pop();
+            const alertId = decodeURIComponent(path.split('/').pop());
             await client.query(`DELETE FROM account_alerts WHERE id = $1 AND user_id = $2`, [alertId, currentUser.userId]);
             return { statusCode: 200, headers: resHeaders, body: JSON.stringify({success: true}) };
         }
@@ -330,7 +330,7 @@ exports.handler = async (e) => {
         }
 
         if (path.match(/^\/fields\/[^/]+$/) && method === 'DELETE') {
-            const fieldId = path.split('/').pop();
+            const fieldId = decodeURIComponent(path.split('/').pop());
             const ownershipCheck = await client.query(`SELECT id FROM fields WHERE id = $1 AND user_id = $2`, [fieldId, currentUser.userId]);
             if (ownershipCheck.rows.length === 0) return { statusCode: 403, headers: resHeaders, body: JSON.stringify({ msg: "Forbidden: Field not found or access denied" }) };
 
@@ -381,7 +381,7 @@ exports.handler = async (e) => {
         }
 
         if (path.match(/^\/orders\/[^/]+$/)) {
-            const oid = path.split('/').pop();
+            const oid = decodeURIComponent(path.split('/').pop());
             
             if (method === 'PUT') {
                 await client.query(
