@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Field, WaterOrder, WaterOrderStatus, WaterAccount, AccountAlert, AlertType } from '../types';
+import { Field, WaterOrder, WaterOrderStatus, WaterOrderType, WaterAccount, AccountAlert, AlertType } from '../types';
 import { getWaterAccounts, getAlerts } from '../services/api';
 
 interface RemainingFeedViewProps {
@@ -76,17 +76,50 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
       `}} />
 
       {fields.map(field => {
+        const currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        const parseDate = (dateStr: string) => {
+            const parts = dateStr.split('-');
+            return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        };
+
         // 1. Current State (Running vs Off)
-        const activeOrder = waterOrders.find(
-          o => o.fieldId === field.id && o.status === WaterOrderStatus.InProgress
-        );
+        // Must be InProgress, NOT a "Turn Off" order, and scheduled for today or earlier
+        const activeOrder = waterOrders.find(o => {
+            if (o.fieldId !== field.id || o.status !== WaterOrderStatus.InProgress) return false;
+            if (o.orderType === 'Turn Off' || o.orderType === WaterOrderType.TurnOff) return false;
+            
+            if (!o.deliveryStartDate) return true; // Fallback if no date is set
+            const start = parseDate(o.deliveryStartDate);
+            return start.getTime() <= currentDate.getTime();
+        });
+        
         const isRunning = !!activeOrder;
 
-        // 2. Pending Order Logic
-        const pendingOrder = waterOrders.find(
-            o => o.fieldId === field.id && 
-            (o.status === WaterOrderStatus.Pending || o.status === WaterOrderStatus.Approved)
-        );
+        // 2. Pending Order Logic (Calendar Aware)
+        const futureOrPendingOrders = waterOrders.filter(o => {
+             if (o.fieldId !== field.id) return false;
+             
+             // True if it is explicitly waiting in the queue
+             if (o.status === WaterOrderStatus.Pending || o.status === WaterOrderStatus.Approved) return true;
+             
+             // True if it was instantly moved to InProgress but is scheduled for a future date
+             if (o.status === WaterOrderStatus.InProgress && o.deliveryStartDate) {
+                 const start = parseDate(o.deliveryStartDate);
+                 if (start.getTime() > currentDate.getTime()) return true;
+             }
+             
+             return false;
+        });
+
+        // Sort by start date to find the next most immediate order
+        futureOrPendingOrders.sort((a, b) => {
+             const dateA = a.deliveryStartDate ? parseDate(a.deliveryStartDate).getTime() : Infinity;
+             const dateB = b.deliveryStartDate ? parseDate(b.deliveryStartDate).getTime() : Infinity;
+             return dateA - dateB;
+        });
+
+        const pendingOrder = futureOrPendingOrders[0];
 
         // 3. Real-time Calculations
         const runningInches = activeOrder?.requestedInches 
@@ -136,6 +169,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
              const startParts = order.deliveryStartDate.split('-');
              const start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
 
+             // If order is in the future, duration will safely be calculated as 0
              if (order.status === WaterOrderStatus.InProgress) {
                  duration = Math.max(0, (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
              } else if (order.status === WaterOrderStatus.Completed && order.deliveryEndDate) {
@@ -212,7 +246,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
             <div className="min-h-[28px]">
                 {pendingOrder ? (
                     <div className="bg-white/20 px-4 py-1 rounded-full text-white font-black text-sm uppercase tracking-wider">
-                        PENDING {pendingOrder.orderType === 'Turn Off' ? 'OFF' : 'ON'} ORDER {formatDate(pendingOrder.deliveryStartDate)}
+                        PENDING ORDER {pendingOrder.orderType === 'Turn Off' || pendingOrder.orderType === WaterOrderType.TurnOff ? 'OFF' : 'ON'} {formatDate(pendingOrder.deliveryStartDate)}
                     </div>
                 ) : (
                     <div className="text-white/40 text-xs font-bold uppercase tracking-widest">NO PENDING ORDERS</div>

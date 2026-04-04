@@ -14,7 +14,7 @@ async function initSchema(client) {
         `CREATE TABLE IF NOT EXISTS users (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), email VARCHAR(255) UNIQUE NOT NULL, password_hash VARCHAR(255) NOT NULL, role VARCHAR(50) DEFAULT 'farmer', created_at TIMESTAMP DEFAULT NOW())`,
         `CREATE TABLE IF NOT EXISTS laterals (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL)`,
         `CREATE TABLE IF NOT EXISTS headgates (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255) NOT NULL, lateral_id VARCHAR(255) REFERENCES laterals(id), tap_number VARCHAR(50))`,
-        `CREATE TABLE IF NOT EXISTS accounts (account_number VARCHAR(255) PRIMARY KEY, owner_name VARCHAR(255), total_allotment NUMERIC DEFAULT 0, user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE)`,
+        `CREATE TABLE IF NOT EXISTS accounts (account_number VARCHAR(255) PRIMARY KEY, owner_name VARCHAR(255), total_allotment NUMERIC DEFAULT 0, total_allowance NUMERIC DEFAULT 0, user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE)`,
         `CREATE TABLE IF NOT EXISTS fields (
             id VARCHAR(255) PRIMARY KEY, 
             name VARCHAR(255), 
@@ -72,6 +72,9 @@ async function initSchema(client) {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(255)`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50)`);
+    
+    // Auto-patch existing databases with the new allowance column
+    await client.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS total_allowance NUMERIC DEFAULT 0`);
     
     schemaDone = true;
 }
@@ -229,10 +232,10 @@ exports.handler = async (e) => {
             }
             if (method === 'POST') {
                 await client.query(
-                    `INSERT INTO accounts (account_number, owner_name, total_allotment, user_id) VALUES ($1, $2, $3, $4) 
-                     ON CONFLICT (account_number) DO UPDATE SET owner_name = EXCLUDED.owner_name, total_allotment = EXCLUDED.total_allotment 
+                    `INSERT INTO accounts (account_number, owner_name, total_allotment, total_allowance, user_id) VALUES ($1, $2, $3, $4, $5) 
+                     ON CONFLICT (account_number) DO UPDATE SET owner_name = EXCLUDED.owner_name, total_allotment = EXCLUDED.total_allotment, total_allowance = EXCLUDED.total_allowance
                      WHERE accounts.user_id = EXCLUDED.user_id`, 
-                    [body.accountNumber, body.ownerName, body.totalAllotment, currentUser.userId]
+                    [body.accountNumber, body.ownerName, body.totalAllotment, body.totalAllowance, currentUser.userId]
                 );
                 return { statusCode: 201, headers: resHeaders, body: JSON.stringify({ success: true }) };
             }
