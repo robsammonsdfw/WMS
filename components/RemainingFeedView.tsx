@@ -87,7 +87,7 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
         // Must be InProgress, NOT a "Turn Off" order, and scheduled for today or earlier
         const activeOrder = waterOrders.find(o => {
             if (o.fieldId !== field.id || o.status !== WaterOrderStatus.InProgress) return false;
-            if (o.orderType === 'Turn Off' || o.orderType === WaterOrderType.TurnOff) return false;
+            if (o.orderType === WaterOrderType.TurnOff) return false; // <-- TS FIX: Strict Enum Check
             
             if (!o.deliveryStartDate) return true; // Fallback if no date is set
             const start = parseDate(o.deliveryStartDate);
@@ -246,7 +246,8 @@ const RemainingFeedView: React.FC<RemainingFeedViewProps> = ({ fields, waterOrde
             <div className="min-h-[28px]">
                 {pendingOrder ? (
                     <div className="bg-white/20 px-4 py-1 rounded-full text-white font-black text-sm uppercase tracking-wider">
-                        PENDING ORDER {pendingOrder.orderType === 'Turn Off' || pendingOrder.orderType === WaterOrderType.TurnOff ? 'OFF' : 'ON'} {formatDate(pendingOrder.deliveryStartDate)}
+                        {/* <-- TS FIX: Strict Enum Check --> */}
+                        PENDING ORDER {pendingOrder.orderType === WaterOrderType.TurnOff ? 'OFF' : 'ON'} {formatDate(pendingOrder.deliveryStartDate)}
                     </div>
                 ) : (
                     <div className="text-white/40 text-xs font-bold uppercase tracking-widest">NO PENDING ORDERS</div>
